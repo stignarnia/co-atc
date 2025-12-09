@@ -16,8 +16,8 @@ Database of airline operators including ICAO/IATA codes, callsigns, and country 
 *   **Source**: [OpenFlights.org](https://openflights.org/data)
 *   **Format**: CSV (ID, Name, Alias, IATA, ICAO, Callsign, Country, Active)
 
-### `runways.json`
+### `runways.csv`
 Runway threshold coordinates for supported airports, used for accurate landing and takeoff detection relative to specific runways.
 
-*   **Source**: Manual compilation / Airport charts
-*   **Format**: JSON object mapping airport code to runway thresholds (lat/lon)
+*   **Source**: [OurAirports.com](https://ourairports.com/data/)
+*   **Format**: CSV (id, airport_ident, le_ident, le_latitude_deg, le_longitude_deg, ...)

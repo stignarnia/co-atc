@@ -57,9 +57,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/csv"
-	"encoding/json"
 	"math"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -242,7 +242,7 @@ func NewService(
 
 	// Load runway data
 	if stationCfg.RunwaysDBPath != "" {
-		if err := service.loadRunwayData(stationCfg.RunwaysDBPath); err != nil {
+		if err := service.loadRunwayData(stationCfg.RunwaysDBPath, stationCfg.AirportCode); err != nil {
 			service.logger.Error("Failed to load runway data: " + err.Error())
 		}
 	}
@@ -358,19 +358,96 @@ func (s *Service) loadAirlineData() error {
 	return nil
 }
 
-// loadRunwayData loads runway data from the runways.json file
-func (s *Service) loadRunwayData(runwayDBPath string) error {
+// loadRunwayData loads runway data from the runways.csv file
+func (s *Service) loadRunwayData(runwayDBPath string, airportCode string) error {
 	s.logger.Info("Loading runway data from: " + runwayDBPath)
 
 	// Read the file
-	data, err := os.ReadFile(runwayDBPath)
+	file, err := os.Open(runwayDBPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.LazyQuotes = true
+
+	// Skip header
+	if _, err := reader.Read(); err != nil {
+		return err
+	}
+
+	records, err := reader.ReadAll()
 	if err != nil {
 		return err
 	}
 
-	// Parse the JSON
-	if err := json.Unmarshal(data, &s.runwayData); err != nil {
-		return err
+	s.runwayData = RunwayData{
+		Airport: airportCode,
+		RunwayThresholds: make(map[string]map[string]struct {
+			Latitude  float64 `json:"latitude"`
+			Longitude float64 `json:"longitude"`
+		}),
+	}
+
+	for _, record := range records {
+		if len(record) < 17 {
+			continue
+		}
+
+		// Check if this runway belongs to our airport
+		if record[2] != airportCode {
+			continue
+		}
+
+		leIdent := record[8]
+		leLatStr := record[9]
+		leLonStr := record[10]
+
+		heIdent := record[14]
+		heLatStr := record[15]
+		heLonStr := record[16]
+
+		// Skip if any required data is missing
+		if leIdent == "" || heIdent == "" || leLatStr == "" || leLonStr == "" || heLatStr == "" || heLonStr == "" {
+			continue
+		}
+
+		leLat, err1 := strconv.ParseFloat(leLatStr, 64)
+		leLon, err2 := strconv.ParseFloat(leLonStr, 64)
+		heLat, err3 := strconv.ParseFloat(heLatStr, 64)
+		heLon, err4 := strconv.ParseFloat(heLonStr, 64)
+
+		if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+			continue
+		}
+
+		// Create runway pair key
+		runwayPair := leIdent + "-" + heIdent
+
+		// Initialize the inner map
+		thresholds := make(map[string]struct {
+			Latitude  float64 `json:"latitude"`
+			Longitude float64 `json:"longitude"`
+		})
+
+		thresholds[leIdent] = struct {
+			Latitude  float64 `json:"latitude"`
+			Longitude float64 `json:"longitude"`
+		}{
+			Latitude:  leLat,
+			Longitude: leLon,
+		}
+
+		thresholds[heIdent] = struct {
+			Latitude  float64 `json:"latitude"`
+			Longitude float64 `json:"longitude"`
+		}{
+			Latitude:  heLat,
+			Longitude: heLon,
+		}
+
+		s.runwayData.RunwayThresholds[runwayPair] = thresholds
 	}
 
 	s.logger.Info("Loaded runway data",

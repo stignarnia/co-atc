@@ -91,7 +91,7 @@ co-atc/
 │       └── server.go         # WebSocket server implementation
 ├── assets/                   # Static assets
 │   ├── airlines.dat          # Airline database
-│   └── runways.json          # Runway database
+│   └── runways.csv           # Runway database
 ├── prompts/                  # AI System Prompts
 │   ├── atc_chat_prompt.txt   # ATC chat AI prompt
 │   ├── post_processing_prompt.txt # Post-processing prompt

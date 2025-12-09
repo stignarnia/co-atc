@@ -102,8 +102,8 @@ elevation_feet = 569
 # ICAO code of the airport (e.g., "CYYZ" for Toronto Pearson)
 airport_code = "CYYZ"
 
-# Path to runway database JSON file
-runways_db_path = "assets/runways.json"
+# Path to runway database CSV file (OurAirports format)
+runways_db_path = "assets/runways.csv"
 
 # Length of runway extensions in nautical miles (default: 10.0)
 runway_extension_length_nm = 10.0
