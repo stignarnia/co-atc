@@ -163,14 +163,28 @@ func main() {
 		FetchTAF:               cfg.Weather.FetchTAF,
 		FetchNOTAMs:            cfg.Weather.FetchNOTAMs,
 		CacheExpiryMinutes:     cfg.Weather.CacheExpiryMinutes,
+		GFS: weather.GFSConfig{
+			Enabled:                cfg.Weather.GFS.Enabled,
+			BaseURL:                cfg.Weather.GFS.BaseURL,
+			RefreshIntervalMinutes: cfg.Weather.GFS.RefreshIntervalMinutes,
+			GridDomainRadiusNM:     cfg.Weather.GFS.GridDomainRadiusNM,
+		},
+	}
+	// Override GFS Grid Radius with ADSB Search Radius if specified
+	if cfg.ADSB.SearchRadiusNM > 0 {
+		weatherConfigConverted.GFS.GridDomainRadiusNM = float64(cfg.ADSB.SearchRadiusNM)
 	}
 	weatherService := weather.NewService(weatherConfigConverted, cfg.Station.AirportCode, log)
+	weatherService.SetStationCoordinates(cfg.Station.Latitude, cfg.Station.Longitude)
 
 	// Start weather service
 	if err := weatherService.Start(); err != nil {
 		log.Error("Failed to start weather service", logger.Error(err))
 		os.Exit(1)
 	}
+
+	// Connect weather service to ADSB service
+	adsbService.SetWeatherService(weatherService)
 
 	// Create templating service
 	templateService := templating.NewService(

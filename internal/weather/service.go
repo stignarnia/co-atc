@@ -14,6 +14,7 @@ type Service struct {
 	config      WeatherConfig
 	airportCode string
 	client      *Client
+	gfsClient   *GFSClient
 	cache       *Cache
 	logger      *logger.Logger
 
@@ -23,6 +24,10 @@ type Service struct {
 	wg      sync.WaitGroup
 	started bool
 	mu      sync.RWMutex
+
+	// Station coordinates
+	stationLat float64
+	stationLon float64
 
 	// Initial data readiness
 	initialDataReady chan struct{}
@@ -40,6 +45,7 @@ func NewService(configWeather ConfigWeatherConfig, airportCode string, logger *l
 		config:           weatherConfig,
 		airportCode:      airportCode,
 		client:           NewClient(weatherConfig, logger),
+		gfsClient:        NewGFSClient(weatherConfig.GFS, logger),
 		cache:            NewCache(weatherConfig, logger),
 		logger:           logger.Named("weather-service"),
 		ctx:              ctx,
@@ -75,6 +81,15 @@ func (s *Service) Start() error {
 		s.backgroundRefresh()
 	}()
 
+	// Start GFS refresh loop
+	if s.config.GFS.Enabled {
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.gfsRefreshLoop()
+		}()
+	}
+
 	s.started = true
 	return nil
 }
@@ -99,6 +114,52 @@ func (s *Service) Stop() error {
 	s.started = false
 	s.logger.Info("Weather service stopped")
 	return nil
+}
+
+// GetConditions returns the interpolated weather conditions (U, V, Temp) for a specific 3D point
+func (s *Service) GetConditions(lat, lon, altFt float64) (u, v, temp float64, err error) {
+	if !s.config.GFS.Enabled {
+		return 0, 0, 0, fmt.Errorf("GFS disabled")
+	}
+	return s.gfsClient.GetConditions(lat, lon, altFt)
+}
+
+// gfsRefreshLoop runs the periodic GFS data refresh
+func (s *Service) gfsRefreshLoop() {
+	refreshInterval := time.Duration(s.config.GFS.RefreshIntervalMinutes) * time.Minute
+	if refreshInterval < 1*time.Minute {
+		refreshInterval = 60 * time.Minute
+	}
+
+	ticker := time.NewTicker(refreshInterval)
+	defer ticker.Stop()
+
+	// Initial fetch
+	s.fetchGFS()
+
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-ticker.C:
+			s.fetchGFS()
+		}
+	}
+}
+
+// fetchGFS fetches the GFS regional grid
+func (s *Service) fetchGFS() {
+	// Use station coordinates for the center
+	s.logger.Info("Fetching GFS regional grid",
+		logger.Float64("lat", s.stationLat),
+		logger.Float64("lon", s.stationLon))
+
+	err := s.gfsClient.FetchRegionalGrid(s.stationLat, s.stationLon)
+	if err != nil {
+		s.logger.Error("Failed to fetch GFS data", logger.Error(err))
+	} else {
+		s.logger.Info("GFS data updated successfully")
+	}
 }
 
 // GetWeatherData returns the current cached weather data
@@ -146,6 +207,14 @@ func (s *Service) IsStarted() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.started
+}
+
+// SetStationCoordinates updates the station coordinates used for GFS fetching
+func (s *Service) SetStationCoordinates(lat, lon float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stationLat = lat
+	s.stationLon = lon
 }
 
 // performInitialFetch performs the first weather data fetch on service start

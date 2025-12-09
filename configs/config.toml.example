@@ -368,6 +368,13 @@ fetch_notams = true
 # Cache settings
 cache_expiry_minutes = 60  # How long to keep cached data if refresh fails
 
+# Global Forecast System (GFS) Configuration
+# Provides 3D wind and temperature data for accurate aircraft performance calculations.
+[wx.gfs]
+enabled = true
+base_url = "https://api.open-meteo.com/v1/gfs" # Open-Meteo GFS API endpoint
+refresh_interval_minutes = 60 # Update the 3D grid once per hour
+
 #######################################################
 # ATC Chat Configuration
 #######################################################

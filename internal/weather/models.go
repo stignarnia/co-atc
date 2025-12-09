@@ -23,14 +23,23 @@ type WeatherCache struct {
 
 // WeatherConfig represents the weather service configuration
 type WeatherConfig struct {
-	RefreshIntervalMinutes int    `toml:"refresh_interval_minutes"`
-	APIBaseURL             string `toml:"api_base_url"`
-	RequestTimeoutSeconds  int    `toml:"request_timeout_seconds"`
-	MaxRetries             int    `toml:"max_retries"`
-	FetchMETAR             bool   `toml:"fetch_metar"`
-	FetchTAF               bool   `toml:"fetch_taf"`
-	FetchNOTAMs            bool   `toml:"fetch_notams"`
-	CacheExpiryMinutes     int    `toml:"cache_expiry_minutes"`
+	RefreshIntervalMinutes int       `toml:"refresh_interval_minutes"`
+	APIBaseURL             string    `toml:"api_base_url"`
+	RequestTimeoutSeconds  int       `toml:"request_timeout_seconds"`
+	MaxRetries             int       `toml:"max_retries"`
+	FetchMETAR             bool      `toml:"fetch_metar"`
+	FetchTAF               bool      `toml:"fetch_taf"`
+	FetchNOTAMs            bool      `toml:"fetch_notams"`
+	CacheExpiryMinutes     int       `toml:"cache_expiry_minutes"`
+	GFS                    GFSConfig `toml:"gfs"`
+}
+
+// GFSConfig represents the GFS data configuration
+type GFSConfig struct {
+	Enabled                bool    `toml:"enabled"`
+	BaseURL                string  `toml:"base_url"`
+	RefreshIntervalMinutes int     `toml:"refresh_interval_minutes"`
+	GridDomainRadiusNM     float64 `toml:"grid_domain_radius_nm"`
 }
 
 // WeatherType represents the type of weather data
@@ -95,14 +104,15 @@ func DefaultWeatherConfig() WeatherConfig {
 // ConfigWeatherConfig represents the config package's WeatherConfig
 // This is used to avoid circular imports
 type ConfigWeatherConfig struct {
-	RefreshIntervalMinutes int    `toml:"refresh_interval_minutes"`
-	APIBaseURL             string `toml:"api_base_url"`
-	RequestTimeoutSeconds  int    `toml:"request_timeout_seconds"`
-	MaxRetries             int    `toml:"max_retries"`
-	FetchMETAR             bool   `toml:"fetch_metar"`
-	FetchTAF               bool   `toml:"fetch_taf"`
-	FetchNOTAMs            bool   `toml:"fetch_notams"`
-	CacheExpiryMinutes     int    `toml:"cache_expiry_minutes"`
+	RefreshIntervalMinutes int       `toml:"refresh_interval_minutes"`
+	APIBaseURL             string    `toml:"api_base_url"`
+	RequestTimeoutSeconds  int       `toml:"request_timeout_seconds"`
+	MaxRetries             int       `toml:"max_retries"`
+	FetchMETAR             bool      `toml:"fetch_metar"`
+	FetchTAF               bool      `toml:"fetch_taf"`
+	FetchNOTAMs            bool      `toml:"fetch_notams"`
+	CacheExpiryMinutes     int       `toml:"cache_expiry_minutes"`
+	GFS                    GFSConfig `toml:"gfs"`
 }
 
 // FromConfigWeatherConfig converts a config.WeatherConfig to weather.WeatherConfig
@@ -116,5 +126,16 @@ func FromConfigWeatherConfig(cfg ConfigWeatherConfig) WeatherConfig {
 		FetchTAF:               cfg.FetchTAF,
 		FetchNOTAMs:            cfg.FetchNOTAMs,
 		CacheExpiryMinutes:     cfg.CacheExpiryMinutes,
+		GFS:                    cfg.GFS,
+	}
+}
+
+// DefaultGFSConfig returns the default GFS configuration
+func DefaultGFSConfig() GFSConfig {
+	return GFSConfig{
+		Enabled:                true,
+		BaseURL:                "https://api.open-meteo.com/v1/gfs",
+		RefreshIntervalMinutes: 60,
+		GridDomainRadiusNM:     50.0, // Default to ~1 degree coverage if not overridden
 	}
 }

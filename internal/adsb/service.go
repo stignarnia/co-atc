@@ -65,6 +65,8 @@ import (
 	"time"
 
 	"github.com/yegors/co-atc/internal/config"
+	"github.com/yegors/co-atc/internal/physics"
+	"github.com/yegors/co-atc/internal/weather"
 	"github.com/yegors/co-atc/internal/websocket"
 	"github.com/yegors/co-atc/pkg/logger"
 )
@@ -149,6 +151,7 @@ type Service struct {
 	changeDetector     *ChangeDetector
 	broadcastChan      chan []AircraftChange
 	simulationService  SimulationService
+	weatherService     *weather.Service
 }
 
 // AircraftMetadata holds static aircraft info
@@ -634,6 +637,11 @@ func (s *Service) Stop() {
 	close(s.stopCh)
 	s.wg.Wait()
 	s.logger.Info("ADS-B service stopped")
+}
+
+// SetWeatherService sets the weather service for data enrichment
+func (s *Service) SetWeatherService(ws *weather.Service) {
+	s.weatherService = ws
 }
 
 // fetchLoop periodically fetches and processes ADS-B data
@@ -2061,7 +2069,8 @@ func (s *Service) ProcessRawData(rawData *RawAircraftData) []*Aircraft {
 		existingAircraftMap[a.Hex] = true
 	}
 
-	for _, raw := range rawData.Aircraft {
+	for i := range rawData.Aircraft {
+		raw := &rawData.Aircraft[i]
 		// Skip aircraft without position data
 		if raw.Lat == 0 && raw.Lon == 0 {
 			continue
@@ -2151,6 +2160,60 @@ func (s *Service) ProcessRawData(rawData *RawAircraftData) []*Aircraft {
 			}
 		}
 
+		// GFS Physics Enrichment
+		if s.weatherService != nil {
+			// Get weather at aircraft position
+			alt := float64(raw.AltBaro)
+			if alt == 0 && raw.AltGeom != 0 {
+				alt = float64(raw.AltGeom)
+			}
+
+			u, v, tempC, err := s.weatherService.GetConditions(raw.Lat, raw.Lon, alt)
+			if err == nil {
+				// We have wind data!
+				windSpeed := math.Sqrt(u*u + v*v) // m/s
+				windDirRad := math.Atan2(v, u)
+				windDirDeg := (270.0 - (windDirRad * 180.0 / math.Pi))
+				for windDirDeg >= 360 {
+					windDirDeg -= 360
+				}
+				for windDirDeg < 0 {
+					windDirDeg += 360
+				}
+
+				raw.WS = float64(windSpeed * physics.MsToKnots)
+				raw.WD = float64(windDirDeg)
+
+				// Solve Wind Triangle for TAS and Headings
+				if raw.GS > 0 {
+					tas, trueHeading := physics.SolveWindTriangle(raw.GS, raw.Track, u, v)
+					raw.TAS = float64(tas)
+
+					// Use MagHeading as placeholder for TrueHeading or calculate Magnetic if we had Var
+					if raw.MagHeading == 0 {
+						raw.MagHeading = float64(trueHeading)
+					}
+
+					// Calculate Mach
+					mach := physics.CalculateMach(tas, tempC)
+					raw.Mach = float64(mach)
+
+					// Calculate IAS (Derived from TAS and Density using GFS Temp and Altitude Pressure)
+					pressure := physics.AltitudeToPressure(alt)
+
+					ias := physics.CalculateIASWithTemp(tas, pressure, tempC)
+					raw.IAS = float64(ias)
+					s.logger.Debug("Calculated IAS",
+						logger.String("hex", raw.Hex),
+						logger.Float64("tas", tas),
+						logger.Float64("pressure", pressure),
+						logger.Float64("ias", raw.IAS))
+
+					raw.OAT = float64(tempC)
+				}
+			}
+		}
+
 		// Determine if aircraft is on ground based on speed and altitude
 		// Get previous data for sensor validation if this aircraft exists
 		var prevTAS, prevGS, prevAlt float64
@@ -2223,7 +2286,7 @@ func (s *Service) ProcessRawData(rawData *RawAircraftData) []*Aircraft {
 			Phase:              nil,                                             // Phase will be handled separately
 			LastSeen:           now.Add(-time.Duration(raw.Seen) * time.Second), // Already in UTC since now is UTC
 			OnGround:           onGround,
-			ADSB:               &raw,
+			ADSB:               raw,
 			IsSimulated:        isSimulated,
 			SimulationControls: simulationControls,
 		}

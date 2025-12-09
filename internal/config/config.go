@@ -830,14 +830,23 @@ func (c *Config) ValidateWeather() error {
 
 // WeatherConfig contains weather data fetching and caching configuration
 type WeatherConfig struct {
-	RefreshIntervalMinutes int    `toml:"refresh_interval_minutes"` // Weather data refresh interval in minutes
-	APIBaseURL             string `toml:"api_base_url"`             // Base URL for weather API (e.g., https://node.windy.com/airports)
-	RequestTimeoutSeconds  int    `toml:"request_timeout_seconds"`  // HTTP request timeout in seconds
-	MaxRetries             int    `toml:"max_retries"`              // Maximum number of retry attempts for failed requests
-	FetchMETAR             bool   `toml:"fetch_metar"`              // Whether to fetch METAR data
-	FetchTAF               bool   `toml:"fetch_taf"`                // Whether to fetch TAF data
-	FetchNOTAMs            bool   `toml:"fetch_notams"`             // Whether to fetch NOTAM data
-	CacheExpiryMinutes     int    `toml:"cache_expiry_minutes"`     // How long to keep cached data if refresh fails
+	RefreshIntervalMinutes int       `toml:"refresh_interval_minutes"` // Weather data refresh interval in minutes
+	APIBaseURL             string    `toml:"api_base_url"`             // Base URL for weather API (e.g., https://node.windy.com/airports)
+	RequestTimeoutSeconds  int       `toml:"request_timeout_seconds"`  // HTTP request timeout in seconds
+	MaxRetries             int       `toml:"max_retries"`              // Maximum number of retry attempts for failed requests
+	FetchMETAR             bool      `toml:"fetch_metar"`              // Whether to fetch METAR data
+	FetchTAF               bool      `toml:"fetch_taf"`                // Whether to fetch TAF data
+	FetchNOTAMs            bool      `toml:"fetch_notams"`             // Whether to fetch NOTAM data
+	CacheExpiryMinutes     int       `toml:"cache_expiry_minutes"`     // How long to keep cached data if refresh fails
+	GFS                    GFSConfig `toml:"gfs"`                      // NOAA GFS grid data configuration
+}
+
+// GFSConfig contains configuration for NOAA GFS data fetching
+type GFSConfig struct {
+	Enabled                bool    `toml:"enabled"`                  // Enable fetching GFS 3D wind/temp grid
+	BaseURL                string  `toml:"base_url"`                 // Base URL for GFS provider (e.g., api.open-meteo.com)
+	RefreshIntervalMinutes int     `toml:"refresh_interval_minutes"` // How often to fetch the 3D grid (default: 60)
+	GridDomainRadiusNM     float64 `toml:"grid_domain_radius_nm"`    // Radius of the weather grid in nautical miles (default: 60)
 }
 
 // OpenAIConfig contains OpenAI service configuration such as base URL and endpoint path overrides.

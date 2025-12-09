@@ -713,26 +713,25 @@ document.addEventListener('alpine:init', () => {
                     ['Vertical Rate', `${adsbData.baro_rate ?? 0} ft/min`]
                 ]],
                 ['Speed & Direction', [
-                    ['Ground Speed', `${adsbData.gs ?? 'N/A'} kts`],
-                    ['True Airspeed', `${adsbData.tas ?? 'N/A'} kts`],
-                    ['IAS', `${adsbData.ias ?? 'N/A'} kts`],
-                    ['TAS', `${adsbData.tas ?? 'N/A'} kts`],
-                    ['Mach', adsbData.mach ?? 'N/A'],
-                    ['Track', `${adsbData.track ?? 'N/A'}°`],
-                    ['Mag Heading', `${adsbData.mag_heading ?? 'N/A'}°`],
-                    ['True Heading', `${adsbData.true_heading ?? 'N/A'}°`]
+                    ['Ground Speed', `${adsbData.gs != null ? adsbData.gs.toFixed(2) : 'N/A'} kts`],
+                    ['Indicated Airspeed', `${adsbData.ias != null ? adsbData.ias.toFixed(2) : 'N/A'} kts`],
+                    ['True Airspeed', `${adsbData.tas != null ? adsbData.tas.toFixed(2) : 'N/A'} kts`],
+                    ['Mach', adsbData.mach != null ? adsbData.mach.toFixed(2) : 'N/A'],
+                    ['Track', `${adsbData.track != null ? adsbData.track.toFixed(2) : 'N/A'}°`],
+                    ['Mag Heading', `${adsbData.mag_heading != null ? adsbData.mag_heading.toFixed(2) : 'N/A'}°`],
+                    ['True Heading', `${adsbData.true_heading != null ? adsbData.true_heading.toFixed(2) : 'N/A'}°`]
                 ]],
                 ['Navigation', [
                     ['Nav QNH', `${adsbData.nav_qnh ?? 'N/A'} hPa`],
                     ['Nav Altitude MCP', `${adsbData.nav_altitude_mcp ?? 'N/A'} ft`],
                     ['Nav Altitude FMS', `${adsbData.nav_altitude_fms ?? 'N/A'} ft`],
-                    ['Nav Heading', `${adsbData.nav_heading ?? 'N/A'}°`]
+                    ['Nav Heading', `${adsbData.nav_heading != null ? adsbData.nav_heading.toFixed(2) : 'N/A'}°`]
                 ]],
                 ['Weather', [
-                    ['Wind Direction', `${adsbData.wd ?? 'N/A'}°`],
-                    ['Wind Speed', `${adsbData.ws ?? 'N/A'} kts`],
-                    ['OAT', `${adsbData.oat ?? 'N/A'}°C`],
-                    ['TAT', `${adsbData.tat ?? 'N/A'}°C`]
+                    ['Wind Direction', `${adsbData.wd != null ? adsbData.wd.toFixed(2) : 'N/A'}°`],
+                    ['Wind Speed', `${adsbData.ws != null ? adsbData.ws.toFixed(2) : 'N/A'} kts`],
+                    ['OAT', `${adsbData.oat != null ? adsbData.oat.toFixed(2) : 'N/A'}°C`],
+                    ['TAT', `${adsbData.tat != null ? adsbData.tat.toFixed(2) : 'N/A'}°C`]
                 ]],
                 ['ADSB Info', [
                     ['Version', adsbData.version ?? 'N/A'],
