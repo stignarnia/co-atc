@@ -55,7 +55,7 @@ search_radius_nm = 50
 # Common configuration for both source types
 fetch_interval_seconds = 2      # How often to fetch new aircraft data
 signal_lost_timeout_seconds = 60 # How long to wait before considering a signal lost
-airline_db_path = "assets/airlines.json"  # Path to airline database JSON file for aircraft operator lookups
+airline_db_path = "assets/airlines.dat"  # Path to airline database CSV file for aircraft operator lookups
 aircraft_db_path = "assets/aircraft.csv"    # Path to aircraft database CSV file for metadata enrichment
 
 # Enable WebSocket aircraft streaming (hybrid mode)

@@ -10,11 +10,11 @@ Database of aircraft metadata (registration, type code, manufacturer, etc.) used
 *   **Source**: [wiedehopf/tar1090-db](https://github.com/wiedehopf/tar1090-db)
 *   **Format**: Semicolon-separated CSV (Hex;Registration;Type;...)
 
-### `airlines.json`
+### `airlines.dat`
 Database of airline operators including ICAO/IATA codes, callsigns, and country of origin. used for flight number matching and operator identification.
 
 *   **Source**: [OpenFlights.org](https://openflights.org/data)
-*   **Format**: JSON Array of Airline objects
+*   **Format**: CSV (ID, Name, Alias, IATA, ICAO, Callsign, Country, Active)
 
 ### `runways.json`
 Runway threshold coordinates for supported airports, used for accurate landing and takeoff detection relative to specific runways.

@@ -56,6 +56,7 @@ user notifications.
 import (
 	"bufio"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"math"
 	"os"
@@ -71,18 +72,6 @@ import (
 // WebSocketServer defines the interface for a WebSocket server
 type WebSocketServer interface {
 	Broadcast(message *websocket.Message)
-}
-
-// Airline represents an airline from the airlines.json file
-type Airline struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Alias    string `json:"alias"`
-	IATA     string `json:"iata"`
-	ICAO     string `json:"icao"`
-	Callsign string `json:"callsign"`
-	Country  string `json:"country"`
-	Active   string `json:"active"`
 }
 
 // Storage defines the interface for aircraft data storage
@@ -306,33 +295,56 @@ func (s *Service) broadcastAircraftChange(change AircraftChange) {
 	}
 }
 
-// loadAirlineData loads airline data from the airlines.json file
+// loadAirlineData loads airline data from the airlines.dat file (CSV format)
 func (s *Service) loadAirlineData() error {
 	s.logger.Info("Loading airline data from: " + s.airlineDBPath)
 
 	// Read the file
-	data, err := os.ReadFile(s.airlineDBPath)
+	file, err := os.Open(s.airlineDBPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	// airlines.dat allows variable number of fields in some broken rows, but standard is consistent.
+	// However, standard package defaults to expecting same number of fields.
+	// Let's set LazyQuotes just in case, though standard dat usually uses quotes properly.
+	reader.LazyQuotes = true
+
+	records, err := reader.ReadAll()
 	if err != nil {
 		return err
 	}
 
-	// Parse the JSON
-	var airlines []Airline
-	if err := json.Unmarshal(data, &airlines); err != nil {
-		return err
-	}
+	for _, record := range records {
+		// Format: ID, Name, Alias, IATA, ICAO, Callsign, Country, Active
+		// Example: 1,"Private flight",\N,"-","N/A",\N,\N,"Y"
+		if len(record) < 8 {
+			continue
+		}
 
-	// Create the mapping
-	for _, airline := range airlines {
+		name := record[1]
+		iata := record[3]
+		icao := record[4]
+
+		// Handle \N as empty
+		if iata == "\\N" {
+			iata = ""
+		}
+		if icao == "\\N" {
+			icao = ""
+		}
+
 		// Map ICAO code to airline name
-		if airline.ICAO != "" && airline.ICAO != "N/A" {
-			s.airlineMap[airline.ICAO] = airline.Name
+		if icao != "" && icao != "N/A" {
+			s.airlineMap[icao] = name
 		}
 
 		// Also map IATA code to airline name if available
 		// This handles callsigns that use IATA codes (e.g., AA123 instead of AAL123)
-		if airline.IATA != "" && airline.IATA != "-" && airline.IATA != "N/A" {
-			s.airlineMap[airline.IATA] = airline.Name
+		if iata != "" && iata != "-" && iata != "N/A" {
+			s.airlineMap[iata] = name
 		}
 	}
 
