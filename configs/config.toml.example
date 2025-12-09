@@ -57,6 +57,7 @@ fetch_interval_seconds = 2      # How often to fetch new aircraft data
 signal_lost_timeout_seconds = 60 # How long to wait before considering a signal lost
 airline_db_path = "assets/airlines.dat"  # Path to airline database CSV file for aircraft operator lookups
 aircraft_db_path = "assets/aircraft.csv"    # Path to aircraft database CSV file for metadata enrichment
+recat_db_path = "assets/extract-recat-eu/recat_eu_aircraft.csv" # Path to RECAT-EU database CSV file
 
 # Enable WebSocket aircraft streaming (hybrid mode)
 websocket_aircraft_updates = false
