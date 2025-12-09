@@ -2034,6 +2034,9 @@ func (s *Service) ProcessRawData(rawData *RawAircraftData) []*Aircraft {
 				if raw.Type == "" {
 					raw.Type = meta.Type
 				}
+				if raw.AircraftType == "" {
+					raw.AircraftType = meta.Type
+				}
 			}
 		}
 

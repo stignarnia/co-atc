@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -450,7 +451,7 @@ func (c *Client) fetchOpenSkyData(ctx context.Context) (*RawAircraftData, error)
 
 		if len(s) > 0 {
 			if v, ok := s[0].(string); ok {
-				hex = v
+				hex = strings.ToUpper(v)
 			}
 		}
 		if len(s) > 1 {
