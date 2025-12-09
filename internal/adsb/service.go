@@ -54,6 +54,7 @@ user notifications.
 */
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"math"
@@ -123,31 +124,43 @@ type SimulationService interface {
 
 // Service is the main service for ADS-B data processing
 type Service struct {
-	client             *Client
-	storage            Storage
-	fetchInterval      time.Duration
-	maxPositionsInAPI  int // Maximum number of positions to return in the API response
-	logger             *logger.Logger
-	lastFetchTime      time.Time
-	lastFetchStatus    bool
-	mu                 sync.RWMutex
-	stopCh             chan struct{}
-	wg                 sync.WaitGroup
-	airlineMap         map[string]string         // Map of ICAO code to airline name
-	airlineDBPath      string                    // Path to airlines.json file
-	stationLat         float64                   // Station latitude from config
-	stationLon         float64                   // Station longitude from config
-	stationElevFeet    float64                   // Station elevation in feet
-	overrideLat        *float64                  // Override station latitude (nil = use config)
-	overrideLon        *float64                  // Override station longitude (nil = use config)
-	overrideMutex      sync.RWMutex              // Protect override coordinates
-	wsServer           WebSocketServer           // WebSocket server for broadcasting events
-	signalLostTimeout  time.Duration             // Time after which aircraft is marked as signal_lost
-	runwayData         RunwayData                // Runway data for approach detection
-	flightPhasesConfig config.FlightPhasesConfig // Flight phases configuration
-	changeDetector     *ChangeDetector           // Tracks aircraft changes
-	broadcastChan      chan []AircraftChange     // Channel for broadcasting changes
-	simulationService  SimulationService         // Simulation service for simulated aircraft
+	client            *Client
+	storage           Storage
+	fetchInterval     time.Duration
+	maxPositionsInAPI int // Maximum number of positions to return in the API response
+	logger            *logger.Logger
+	lastFetchTime     time.Time
+	lastFetchStatus   bool
+	mu                sync.RWMutex
+	stopCh            chan struct{}
+	wg                sync.WaitGroup
+	// Map of Hex -> Airline Name (loaded from airlines.json)
+	airlineMap    map[string]string
+	airlineDBPath string
+
+	// Map of Hex -> Aircraft Metadata (loaded from aircraft.csv)
+	aircraftDB     map[string]AircraftMetadata
+	aircraftDBPath string
+
+	stationLat         float64
+	stationLon         float64
+	stationElevFeet    float64
+	overrideLat        *float64
+	overrideLon        *float64
+	overrideMutex      sync.RWMutex
+	wsServer           WebSocketServer
+	signalLostTimeout  time.Duration
+	runwayData         RunwayData
+	flightPhasesConfig config.FlightPhasesConfig
+	changeDetector     *ChangeDetector
+	broadcastChan      chan []AircraftChange
+	simulationService  SimulationService
+}
+
+// AircraftMetadata holds static aircraft info
+type AircraftMetadata struct {
+	Registration string
+	Type         string
 }
 
 // AircraftBulkResponse represents server response with bulk aircraft data
@@ -164,6 +177,7 @@ func NewService(
 	fetchInterval time.Duration,
 	maxPositionsInAPI int,
 	airlineDBPath string,
+	aircraftDBPath string,
 	logger *logger.Logger,
 	stationCfg config.StationConfig,
 	adsbCfg config.ADSBConfig,
@@ -186,6 +200,8 @@ func NewService(
 		stopCh:             make(chan struct{}),
 		airlineMap:         make(map[string]string),
 		airlineDBPath:      airlineDBPath,
+		aircraftDB:         make(map[string]AircraftMetadata),
+		aircraftDBPath:     aircraftDBPath,
 		stationLat:         stationCfg.Latitude,
 		stationLon:         stationCfg.Longitude,
 		stationElevFeet:    float64(stationCfg.ElevationFeet),
@@ -225,6 +241,13 @@ func NewService(
 	if airlineDBPath != "" {
 		if err := service.loadAirlineData(); err != nil {
 			service.logger.Error("Failed to load airline data: " + err.Error())
+		}
+	}
+
+	// Load aircraft data
+	if aircraftDBPath != "" {
+		if err := service.loadAircraftData(); err != nil {
+			service.logger.Error("Failed to load aircraft data: " + err.Error())
 		}
 	}
 
@@ -341,6 +364,50 @@ func (s *Service) loadRunwayData(runwayDBPath string) error {
 	s.logger.Info("Loaded runway data",
 		logger.String("airport", s.runwayData.Airport),
 		logger.Int("runway_count", len(s.runwayData.RunwayThresholds)))
+	return nil
+}
+
+// loadAircraftData loads aircraft metadata from the aircraft.csv file
+func (s *Service) loadAircraftData() error {
+	s.logger.Info("Loading aircraft data from: " + s.aircraftDBPath)
+
+	// Read the file lines
+	// Note: We use a simple scanner here. For very large files, this is memory efficient enough as we build the map.
+	file, err := os.Open(s.aircraftDBPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	count := 0
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.Split(line, ";")
+
+		// Format: Hex;Registration;Type;...
+		// We need at least 3 parts for useful data
+		if len(parts) >= 3 {
+			hex := parts[0]
+			reg := parts[1]
+			typeCode := parts[2]
+
+			if hex != "" {
+				s.aircraftDB[hex] = AircraftMetadata{
+					Registration: reg,
+					Type:         typeCode,
+				}
+				count++
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	s.logger.Info("Loaded aircraft data",
+		logger.Int("count", count))
 	return nil
 }
 
@@ -1866,6 +1933,18 @@ func (s *Service) ProcessRawData(rawData *RawAircraftData) []*Aircraft {
 				s.logger.Debug("Failed to derive tail number from ICAO hex",
 					logger.String("hex", raw.Hex),
 					logger.Error(err))
+			}
+		}
+
+		// Metadata Enrichment: Look up missing Type and Registration in local DB
+		if s.aircraftDB != nil {
+			if meta, ok := s.aircraftDB[raw.Hex]; ok {
+				if raw.Registration == "" {
+					raw.Registration = meta.Registration
+				}
+				if raw.Type == "" {
+					raw.Type = meta.Type
+				}
 			}
 		}
 

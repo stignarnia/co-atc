@@ -27,17 +27,14 @@ PROJECT_DIR=$(dirname "$DOCKER_DIR")
 
 echo "📁 Working in: $DOCKER_DIR"
 
-# Check if assets directory exists
-if [ ! -d "../assets" ]; then
-    echo "❌ Assets directory not found at ../assets"
-    echo "   This directory contains essential AI prompts and data files."
-    echo "   Please ensure you're running this from the docker/ directory"
-    echo "   and that the assets/ directory exists in the project root."
+# Check if prompts directory exists
+if [ ! -d "../prompts" ]; then
+    echo "❌ Prompts directory not found at ../prompts"
     exit 1
 fi
 
 # Check if required asset files exist
-REQUIRED_FILES=("../assets/airlines.json" "../assets/airports.json" "../assets/runways.json" "../assets/atc_chat_prompt.txt")
+REQUIRED_FILES=("../assets/airlines.json" "../assets/runways.json" "../prompts/atc_chat_prompt.txt")
 for file in "${REQUIRED_FILES[@]}"; do
     if [ ! -f "$file" ]; then
         echo "❌ Required file missing: $file"

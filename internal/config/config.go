@@ -73,6 +73,7 @@ type ADSBConfig struct {
 	FetchIntervalSecs        int    `toml:"fetch_interval_seconds"`      // How often to fetch new aircraft data (in seconds)
 	SignalLostTimeoutSecs    int    `toml:"signal_lost_timeout_seconds"` // Time after which aircraft is marked as signal_lost (in seconds, default: 60)
 	AirlineDBPath            string `toml:"airline_db_path"`             // Path to airline database JSON file for aircraft operator lookups
+	AircraftDBPath           string `toml:"aircraft_db_path"`            // Path to aircraft database CSV file for metadata enrichment
 	WebSocketAircraftUpdates bool   `toml:"websocket_aircraft_updates"`  // Enable WebSocket aircraft streaming (hybrid mode)
 }
 
@@ -103,11 +104,11 @@ type StationConfig struct {
 // TranscriptionConfig contains settings for audio transcription services
 type TranscriptionConfig struct {
 	// OpenAI API settings
-	OpenAIAPIKey   string `toml:"openai_api_key"`       // OpenAI API key for transcription service
-	OpenAIBaseURL  string `toml:"openai_api_base_url"`  // Optional OpenAI base URL (e.g., for proxies). Defaults to https://api.openai.com
-	Model          string `toml:"model"`                // OpenAI model to use (e.g., "gpt-4o-transcribe")
-	Language       string `toml:"language"`             // Primary language for transcription (e.g., "en" for English)
-	PromptPath     string `toml:"prompt_path"`          // Path to the system prompt file for transcription
+	OpenAIAPIKey  string `toml:"openai_api_key"`      // OpenAI API key for transcription service
+	OpenAIBaseURL string `toml:"openai_api_base_url"` // Optional OpenAI base URL (e.g., for proxies). Defaults to https://api.openai.com
+	Model         string `toml:"model"`               // OpenAI model to use (e.g., "gpt-4o-transcribe")
+	Language      string `toml:"language"`            // Primary language for transcription (e.g., "en" for English)
+	PromptPath    string `toml:"prompt_path"`         // Path to the system prompt file for transcription
 
 	// Audio processing settings
 	NoiseReduction string `toml:"noise_reduction"` // Noise reduction mode: "near_field", "far_field", or "none"
@@ -769,24 +770,24 @@ type OpenAIConfig struct {
 	// If empty, the application will default to "https://api.openai.com".
 	BaseURL string `toml:"base_url"`
 
- 	// RealtimeSessionPath is the path used to create realtime sessions (POST).
- 	// Default: /v1/realtime/sessions
- 	RealtimeSessionPath string `toml:"realtime_session_path"`
+	// RealtimeSessionPath is the path used to create realtime sessions (POST).
+	// Default: /v1/realtime/sessions
+	RealtimeSessionPath string `toml:"realtime_session_path"`
 
- 	// RealtimeWebsocketPath is the base path used for building websocket URLs (wss/ws).
- 	// The websocket URL is constructed by converting the BaseURL scheme (http->ws, https->wss)
- 	// and appending this path and query params (e.g. ?session_id=...).
- 	// Default: /v1/realtime
- 	RealtimeWebsocketPath string `toml:"realtime_websocket_path"`
+	// RealtimeWebsocketPath is the base path used for building websocket URLs (wss/ws).
+	// The websocket URL is constructed by converting the BaseURL scheme (http->ws, https->wss)
+	// and appending this path and query params (e.g. ?session_id=...).
+	// Default: /v1/realtime
+	RealtimeWebsocketPath string `toml:"realtime_websocket_path"`
 
- 	// TranscriptionSessionPath is the path used to create transcription sessions (POST).
- 	// Default: /v1/realtime/transcription_sessions
- 	TranscriptionSessionPath string `toml:"transcription_session_path"`
+	// TranscriptionSessionPath is the path used to create transcription sessions (POST).
+	// Default: /v1/realtime/transcription_sessions
+	TranscriptionSessionPath string `toml:"transcription_session_path"`
 
- 	// ChatCompletionsPath is the path used for chat completions / responses.
- 	// Default: /v1/chat/completions
- 	ChatCompletionsPath string `toml:"chat_completions_path"`
- }
+	// ChatCompletionsPath is the path used for chat completions / responses.
+	// Default: /v1/chat/completions
+	ChatCompletionsPath string `toml:"chat_completions_path"`
+}
 
 // ATCChatConfig contains ATC Chat voice assistant configuration
 type ATCChatConfig struct {

@@ -55,7 +55,8 @@ search_radius_nm = 50
 # Common configuration for both source types
 fetch_interval_seconds = 2      # How often to fetch new aircraft data
 signal_lost_timeout_seconds = 60 # How long to wait before considering a signal lost
-airline_db_path = "assets/airlines.json"  # Path to airline database for aircraft operator lookups
+airline_db_path = "assets/airlines.json"  # Path to airline database JSON file for aircraft operator lookups
+aircraft_db_path = "assets/aircraft.csv"    # Path to aircraft database CSV file for metadata enrichment
 
 # Enable WebSocket aircraft streaming (hybrid mode)
 websocket_aircraft_updates = false
@@ -224,7 +225,7 @@ retry_max_backoff_ms = 10000     # Maximum backoff time in milliseconds
 timeout_seconds = 60
 
 # Path to the transcription prompt file
-prompt_path = "assets/transcription_prompt.txt"
+prompt_path = "prompts/transcription_prompt.txt"
 
 #######################################################
 # Post-Processing Configuration
@@ -249,7 +250,7 @@ context_transcriptions = 3
 timeout_seconds = 120
 
 # Path to the system prompt file
-system_prompt_path = "assets/post_processing_prompt.txt"
+system_prompt_path = "prompts/post_processing_prompt.txt"
 
 #######################################################
 # Flight Phase Detection Configuration
@@ -403,7 +404,7 @@ max_context_aircraft = 200
 transcription_history_seconds = 60
 
 # System prompt configuration
-system_prompt_path = "assets/atc_chat_prompt.txt"
+system_prompt_path = "prompts/atc_chat_prompt.txt"
 
 # Automatic system prompt refresh interval in seconds (0 = disabled)
 # This will automatically send session updates with latest airspace data
@@ -423,10 +424,10 @@ reload_templates = true  # Development mode - reload templates from disk
 
 # ATC Chat template settings
 [templating.atc_chat]
-template_path = "assets/atc_chat_prompt.txt"
+template_path = "prompts/atc_chat_prompt.txt"
 max_aircraft = 200
 
 # Post-processing template settings
 [templating.post_processing]
-template_path = "assets/post_processing_prompt.txt"
+template_path = "prompts/post_processing_prompt.txt"
 context_transcriptions = 5

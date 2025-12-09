@@ -131,6 +131,7 @@ func main() {
 		time.Duration(cfg.ADSB.FetchIntervalSecs)*time.Second,
 		cfg.Storage.MaxPositionsInAPI,
 		cfg.ADSB.AirlineDBPath,
+		cfg.ADSB.AircraftDBPath,
 		log,
 		cfg.Station,
 		cfg.ADSB,
