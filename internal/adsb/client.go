@@ -447,7 +447,6 @@ func (c *Client) fetchOpenSkyData(ctx context.Context) (*RawAircraftData, error)
 		var lat, lon, baroAltMeters, velocity, trueTrack, verticalRate float64
 		var onGround bool
 		var geoAltMeters float64
-		var category float64
 
 		if len(s) > 0 {
 			if v, ok := s[0].(string); ok {
@@ -504,11 +503,6 @@ func (c *Client) fetchOpenSkyData(ctx context.Context) (*RawAircraftData, error)
 				squawk = v
 			}
 		}
-		if len(s) > 17 {
-			if v, ok := s[17].(float64); ok {
-				category = v
-			}
-		}
 
 		// Convert units: meters -> feet, m/s -> knots, m/s -> ft/min
 		altBaroFeet := baroAltMeters * 3.28084
@@ -529,7 +523,6 @@ func (c *Client) fetchOpenSkyData(ctx context.Context) (*RawAircraftData, error)
 			Lat:        lat,
 			Lon:        lon,
 			Squawk:     squawk,
-			Category:   fmt.Sprintf("%d", int(category)),
 			SourceType: "external-opensky",
 			OnGround:   &onGround,
 		}

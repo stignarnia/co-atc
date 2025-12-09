@@ -126,7 +126,6 @@ type ExternalADSBTarget struct {
 	BaroRate       FlexibleField `json:"baro_rate"`
 	GeomRate       FlexibleField `json:"geom_rate"`
 	Squawk         string        `json:"squawk"`
-	Category       string        `json:"category"`
 	NavQNH         FlexibleField `json:"nav_qnh"`
 	NavAltitudeMCP FlexibleField `json:"nav_altitude_mcp"`
 	NavAltitudeFMS FlexibleField `json:"nav_altitude_fms"`
@@ -171,7 +170,6 @@ func (e *ExternalADSBTarget) Convert() ADSBTarget {
 		Registration: e.Registration, // Copy registration field
 		AircraftType: e.AircraftType, // Copy aircraft type field
 		Squawk:       e.Squawk,
-		Category:     e.Category,
 		SILType:      e.SILType,
 		MLAT:         e.MLAT,
 		TISB:         e.TISB,

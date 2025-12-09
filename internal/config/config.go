@@ -76,6 +76,7 @@ type ADSBConfig struct {
 	SignalLostTimeoutSecs    int    `toml:"signal_lost_timeout_seconds"` // Time after which aircraft is marked as signal_lost (in seconds, default: 60)
 	AirlineDBPath            string `toml:"airline_db_path"`             // Path to airline database JSON file for aircraft operator lookups
 	AircraftDBPath           string `toml:"aircraft_db_path"`            // Path to aircraft database CSV file for metadata enrichment
+	RecatDBPath              string `toml:"recat_db_path"`               // Path to RECAT-EU database CSV file
 	WebSocketAircraftUpdates bool   `toml:"websocket_aircraft_updates"`  // Enable WebSocket aircraft streaming (hybrid mode)
 }
 

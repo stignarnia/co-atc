@@ -128,8 +128,13 @@ type Service struct {
 	airlineDBPath string
 
 	// Map of Hex -> Aircraft Metadata (loaded from aircraft.csv)
+	// Map of Hex -> Aircraft Metadata (loaded from aircraft.csv)
 	aircraftDB     map[string]AircraftMetadata
 	aircraftDBPath string
+
+	// Map of Aircraft Type Designator -> RECAT-EU Category
+	recatDB     map[string]string
+	recatDBPath string
 
 	stationLat         float64
 	stationLon         float64
@@ -198,6 +203,8 @@ func NewService(
 		signalLostTimeout:  signalLostTimeout,
 		flightPhasesConfig: flightPhasesConfig,
 		simulationService:  simulationService,
+		recatDB:            make(map[string]string),
+		recatDBPath:        adsbCfg.RecatDBPath,
 	}
 
 	// CRITICAL FIX: Only enable WebSocket streaming if configured
@@ -237,6 +244,13 @@ func NewService(
 	if aircraftDBPath != "" {
 		if err := service.loadAircraftData(); err != nil {
 			service.logger.Error("Failed to load aircraft data: " + err.Error())
+		}
+	}
+
+	// Load RECAT data
+	if adsbCfg.RecatDBPath != "" {
+		if err := service.loadRecatData(); err != nil {
+			service.logger.Error("Failed to load RECAT data: " + err.Error())
 		}
 	}
 
@@ -497,6 +511,53 @@ func (s *Service) loadAircraftData() error {
 
 	s.logger.Info("Loaded aircraft data",
 		logger.Int("count", count))
+	s.logger.Info("Loaded aircraft data",
+		logger.Int("count", count))
+	return nil
+}
+
+// loadRecatData loads RECAT-EU data from the CSV file
+func (s *Service) loadRecatData() error {
+	s.logger.Info("Loading RECAT data from: " + s.recatDBPath)
+
+	file, err := os.Open(s.recatDBPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.LazyQuotes = true
+
+	// Skip header
+	if _, err := reader.Read(); err != nil {
+		return err
+	}
+
+	records, err := reader.ReadAll()
+	if err != nil {
+		return err
+	}
+
+	count := 0
+	for _, record := range records {
+		if len(record) < 5 {
+			continue
+		}
+
+		// Format: Manufacturer, Model, ICAO Type Designator, ICAO Legacy WTC, RECAT-EU WTC
+		// Index 2: ICAO Type Designator
+		// Index 4: RECAT-EU WTC
+		typeDesignator := record[2]
+		recatWTC := record[4]
+
+		if typeDesignator != "" && recatWTC != "" {
+			s.recatDB[typeDesignator] = recatWTC
+			count++
+		}
+	}
+
+	s.logger.Info("Loaded RECAT data", logger.Int("count", count))
 	return nil
 }
 
@@ -2037,6 +2098,22 @@ func (s *Service) ProcessRawData(rawData *RawAircraftData) []*Aircraft {
 				if raw.AircraftType == "" {
 					raw.AircraftType = meta.Type
 				}
+			}
+		}
+
+		// 4. Enrich with RECAT-EU category if available
+		// Priority:
+		// - If we have a type from enrichment (or original), use it to look up RECAT category
+		// - Overwrite any existing category with the RECAT one
+		if raw.AircraftType != "" {
+			if cat, ok := s.recatDB[raw.AircraftType]; ok {
+				raw.Category = cat
+			}
+		} else if raw.Type != "" {
+			// Try using the Type field if AircraftType is not set (e.g. from some sources Type might be the designator)
+			// But usually AircraftType is the one populated from aircraft.csv
+			if cat, ok := s.recatDB[raw.Type]; ok {
+				raw.Category = cat
 			}
 		}
 
