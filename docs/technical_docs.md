@@ -91,6 +91,7 @@ co-atc/
 │       └── server.go         # WebSocket server implementation
 ├── assets/                   # Static assets
 │   ├── airlines.dat          # Airline database
+│   ├── airports.csv          # Airport database (station lookup)
 │   └── runways.csv           # Runway database
 ├── prompts/                  # AI System Prompts
 │   ├── atc_chat_prompt.txt   # ATC chat AI prompt
@@ -314,6 +315,19 @@ The application uses TOML configuration with comprehensive documentation:
 - Database and storage options
 - Weather data integration
 - Flight phase detection parameters
+
+### Station Configuration (New)
+The station configuration is now strictly derived from `airports.csv`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `airport_code` | `string` | ICAO code of the station's airport (e.g., "CYYZ"). |
+| `airports_db_path` | `string` | Path to `airports.csv` database file (Required). |
+| `runways_db_path` | `string` | Path to `runways.csv` database file. |
+| `runway_extension_length_nm` | `float` | Length of runway extensions (default: 10.0). |
+| `airport_range_nm` | `float` | Range to monitor around the airport (default: 5.0). |
+
+Note: `latitude`, `longitude`, and `elevation_feet` are no longer manually configurable and must be derived from the `airports.csv` database based on the `airport_code`.
 
 ## Security Features
 

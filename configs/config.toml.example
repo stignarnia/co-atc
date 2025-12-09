@@ -91,16 +91,11 @@ max_positions_in_api = 50
 # Station Location Configuration
 #######################################################
 [station]
-# Geographic coordinates of your monitoring station (decimal degrees)
-# Example: Toronto Pearson International Airport (CYYZ)
-latitude = 43.6777
-longitude = -79.6248
-
-# Elevation of your station above sea level (in feet)
-elevation_feet = 569
-
 # ICAO code of the airport (e.g., "CYYZ" for Toronto Pearson)
 airport_code = "CYYZ"
+
+# Path to airport database CSV file (OurAirports format)
+airports_db_path = "assets/airports.csv"
 
 # Path to runway database CSV file (OurAirports format)
 runways_db_path = "assets/runways.csv"

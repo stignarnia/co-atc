@@ -34,7 +34,7 @@ if [ ! -d "../prompts" ]; then
 fi
 
 # Check if required asset files exist
-REQUIRED_FILES=("../assets/airlines.dat" "../assets/runways.csv" "../prompts/atc_chat_prompt.txt")
+REQUIRED_FILES=("../assets/airlines.dat" "../assets/runways.csv" "../assets/airports.csv" "../prompts/atc_chat_prompt.txt")
 for file in "${REQUIRED_FILES[@]}"; do
     if [ ! -f "$file" ]; then
         echo "❌ Required file missing: $file"

@@ -1,8 +1,10 @@
 package config
 
 import (
+	"encoding/csv"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/BurntSushi/toml"
 )
@@ -91,11 +93,13 @@ type StorageConfig struct {
 }
 
 // StationConfig contains physical location configuration for the monitoring station
+// StationConfig contains physical location configuration for the monitoring station
 type StationConfig struct {
-	Latitude                float64 `toml:"latitude"`                   // Latitude of the station in decimal degrees (-90 to 90)
-	Longitude               float64 `toml:"longitude"`                  // Longitude of the station in decimal degrees (-180 to 180)
-	ElevationFeet           int     `toml:"elevation_feet"`             // Elevation of the station above sea level in feet
+	Latitude                float64 // Latitude of the station in decimal degrees (derived from airports.csv)
+	Longitude               float64 // Longitude of the station in decimal degrees (derived from airports.csv)
+	ElevationFeet           int     // Elevation of the station above sea level in feet (derived from airports.csv)
 	AirportCode             string  `toml:"airport_code"`               // ICAO code of the airport (e.g., "CYYZ")
+	AirportsDBPath          string  `toml:"airports_db_path"`           // Path to airport database CSV file (OurAirports format)
 	RunwaysDBPath           string  `toml:"runways_db_path"`            // Path to runway database JSON file
 	RunwayExtensionLengthNM float64 `toml:"runway_extension_length_nm"` // Length of runway extensions in nautical miles
 	AirportRangeNM          float64 `toml:"airport_range_nm"`           // Range in nautical miles to consider aircraft as being at this airport (default: 5.0)
@@ -251,7 +255,83 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to decode config file: %w", err)
 	}
 
+	// Load station details from airports.csv
+	if err := config.loadStationFromCSV(); err != nil {
+		return nil, fmt.Errorf("failed to load station details from CSV: %w", err)
+	}
+
 	return &config, nil
+}
+
+// loadStationFromCSV parses the airports.csv file to find the station coordinates
+func (c *Config) loadStationFromCSV() error {
+	if c.Station.AirportsDBPath == "" {
+		return fmt.Errorf("airports_db_path is required")
+	}
+	if c.Station.AirportCode == "" {
+		return fmt.Errorf("airport_code is required")
+	}
+
+	file, err := os.Open(c.Station.AirportsDBPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.LazyQuotes = true
+
+	// Skip header
+	if _, err := reader.Read(); err != nil {
+		return err
+	}
+
+	records, err := reader.ReadAll()
+	if err != nil {
+		return err
+	}
+
+	found := false
+	for _, record := range records {
+		if len(record) < 7 {
+			continue
+		}
+
+		// Check ident (index 1)
+		if record[1] == c.Station.AirportCode {
+			// Parse latitude (index 4)
+			lat, err := strconv.ParseFloat(record[4], 64)
+			if err != nil {
+				return fmt.Errorf("invalid latitude in CSV for %s: %w", c.Station.AirportCode, err)
+			}
+			c.Station.Latitude = lat
+
+			// Parse longitude (index 5)
+			lon, err := strconv.ParseFloat(record[5], 64)
+			if err != nil {
+				return fmt.Errorf("invalid longitude in CSV for %s: %w", c.Station.AirportCode, err)
+			}
+			c.Station.Longitude = lon
+
+			// Parse elevation (index 6)
+			// Elevation might be empty or valid float
+			if record[6] != "" {
+				elev, err := strconv.ParseFloat(record[6], 64)
+				if err == nil {
+					c.Station.ElevationFeet = int(elev)
+				}
+			}
+
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("airport code %s not found in %s", c.Station.AirportCode, c.Station.AirportsDBPath)
+	}
+
+	return nil
 }
 
 // LoadWithFallback loads the configuration by checking multiple locations in order of preference
