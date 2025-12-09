@@ -65,6 +65,7 @@ type ADSBTarget struct {
 	Seen           float64  `json:"seen"`
 	RSSI           float64  `json:"rssi"`
 	SourceType     string   `json:"source_type,omitempty"` // Indicates whether data came from "local" or "external" source
+	OnGround       *bool    `json:"on_ground,omitempty"`   // Explicit ground status from source (if available)
 }
 
 // PositionMinimal represents a minimal historical position for map trails

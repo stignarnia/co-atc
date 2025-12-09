@@ -493,8 +493,15 @@ func (s *Service) fetchAndProcess(ctx context.Context) error {
 			&s.flightPhasesConfig,
 		)
 
-		// Determine if aircraft is currently flying using corrected values and config
-		currentlyFlying := IsFlying(correctedTAS, correctedGS, correctedAlt, &s.flightPhasesConfig)
+		// Determine if aircraft is currently flying
+		// PRIORITY: Use explicit "OnGround" status from source if available (e.g., OpenSky)
+		var currentlyFlying bool
+		if a.ADSB.OnGround != nil {
+			currentlyFlying = !*a.ADSB.OnGround
+		} else {
+			// Fallback: Use IsFlying heuristic (speed/altitude/vertical rate)
+			currentlyFlying = IsFlying(correctedTAS, correctedGS, correctedAlt, &s.flightPhasesConfig)
+		}
 
 		// Always set on_ground based on flying state
 		a.OnGround = !currentlyFlying

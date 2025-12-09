@@ -72,12 +72,12 @@ func NewClient(
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
-		logger:            loggerObj.Named("adsb-cli"),
-		openskyCredsPath:  openskyCredsPath,
-		openskyBBoxLamin:  openskyBBoxLamin,
-		openskyBBoxLomin:  openskyBBoxLomin,
-		openskyBBoxLamax:  openskyBBoxLamax,
-		openskyBBoxLomax:  openskyBBoxLomax,
+		logger:           loggerObj.Named("adsb-cli"),
+		openskyCredsPath: openskyCredsPath,
+		openskyBBoxLamin: openskyBBoxLamin,
+		openskyBBoxLomin: openskyBBoxLomin,
+		openskyBBoxLamax: openskyBBoxLamax,
+		openskyBBoxLomax: openskyBBoxLomax,
 	}
 }
 
@@ -269,27 +269,27 @@ func (c *Client) fetchOpenSkyData(ctx context.Context) (*RawAircraftData, error)
 	}
 
 	// Credentials path (prefer configured)
-		credPath := c.openskyCredsPath
-		if credPath == "" {
-			credPath = "opensky/credentials.json"
-		}
+	credPath := c.openskyCredsPath
+	if credPath == "" {
+		credPath = "opensky/credentials.json"
+	}
 
-		// Local token variable used for request Authorization header (may be set from cache or newly obtained)
-		var token string
+	// Local token variable used for request Authorization header (may be set from cache or newly obtained)
+	var token string
 
-		// First, check if we already have a non-expired cached token to reuse.
-		c.tokenMu.Lock()
-		if c.token != "" && time.Now().Before(c.tokenExpiry) {
-			// Use cached token
-			token = c.token
-			c.tokenMu.Unlock()
-		} else {
-			// No valid cached token - try to obtain one from credentials file (or token endpoint).
-			c.tokenMu.Unlock()
+	// First, check if we already have a non-expired cached token to reuse.
+	c.tokenMu.Lock()
+	if c.token != "" && time.Now().Before(c.tokenExpiry) {
+		// Use cached token
+		token = c.token
+		c.tokenMu.Unlock()
+	} else {
+		// No valid cached token - try to obtain one from credentials file (or token endpoint).
+		c.tokenMu.Unlock()
 
-			var tokenCandidates string
+		var tokenCandidates string
 
-			if _, err := os.Stat(credPath); err == nil {
+		if _, err := os.Stat(credPath); err == nil {
 			b, err := os.ReadFile(credPath)
 			if err != nil {
 				c.logger.Error("Failed to read OpenSky credentials file", logger.Error(err), logger.String("path", credPath))
@@ -430,8 +430,8 @@ func (c *Client) fetchOpenSkyData(ctx context.Context) (*RawAircraftData, error)
 	}
 
 	var osResp struct {
-		Time   int64             `json:"time"`
-		States [][]interface{}   `json:"states"`
+		Time   int64           `json:"time"`
+		States [][]interface{} `json:"states"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&osResp); err != nil {
 		c.logger.Error("Failed to decode OpenSky response", logger.Error(err))
@@ -530,6 +530,7 @@ func (c *Client) fetchOpenSkyData(ctx context.Context) (*RawAircraftData, error)
 			Squawk:     squawk,
 			Category:   fmt.Sprintf("%d", int(category)),
 			SourceType: "external-opensky",
+			OnGround:   &onGround,
 		}
 
 		// Log first couple conversions for debugging
