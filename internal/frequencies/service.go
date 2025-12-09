@@ -519,6 +519,30 @@ func NewService(
 		RetryMaxBackoffMs:     config.Transcription.RetryMaxBackoffMs,
 		PromptPath:            config.Transcription.PromptPath,
 		TimeoutSeconds:        config.Transcription.TimeoutSeconds,
+		// Per-service OpenAI base URL override (optional). If empty, we'll fall back to top-level [openai].base_url below.
+		OpenAIBaseURL: config.Transcription.OpenAIBaseURL,
+		// Path fields will be populated from top-level [openai] config below (allowing a single place to override endpoints)
+		RealtimeSessionPath:      config.OpenAI.RealtimeSessionPath,
+		RealtimeWebsocketPath:    config.OpenAI.RealtimeWebsocketPath,
+		TranscriptionSessionPath: config.OpenAI.TranscriptionSessionPath,
+		ChatCompletionsPath:      config.OpenAI.ChatCompletionsPath,
+	}
+	// If per-service base URL was not set, use the top-level OpenAI base URL
+	if transcriptionConfig.OpenAIBaseURL == "" {
+		transcriptionConfig.OpenAIBaseURL = config.OpenAI.BaseURL
+	}
+	// Ensure path defaults are present if top-level did not provide them
+	if transcriptionConfig.RealtimeSessionPath == "" {
+		transcriptionConfig.RealtimeSessionPath = config.OpenAI.RealtimeSessionPath
+	}
+	if transcriptionConfig.RealtimeWebsocketPath == "" {
+		transcriptionConfig.RealtimeWebsocketPath = config.OpenAI.RealtimeWebsocketPath
+	}
+	if transcriptionConfig.TranscriptionSessionPath == "" {
+		transcriptionConfig.TranscriptionSessionPath = config.OpenAI.TranscriptionSessionPath
+	}
+	if transcriptionConfig.ChatCompletionsPath == "" {
+		transcriptionConfig.ChatCompletionsPath = config.OpenAI.ChatCompletionsPath
 	}
 
 	// Load the prompt from file

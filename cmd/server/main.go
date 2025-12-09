@@ -69,6 +69,11 @@ func main() {
 		cfg.Station.Latitude,
 		cfg.Station.Longitude,
 		float64(cfg.ADSB.SearchRadiusNM),
+		cfg.ADSB.OpenSkyCredentialsPath,
+		cfg.ADSB.OpenSkyBBoxLamin,
+		cfg.ADSB.OpenSkyBBoxLomin,
+		cfg.ADSB.OpenSkyBBoxLamax,
+		cfg.ADSB.OpenSkyBBoxLomax,
 		time.Duration(cfg.Server.ReadTimeoutSecs)*time.Second,
 		log,
 	)

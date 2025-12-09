@@ -62,8 +62,8 @@ func NewProcessor(
 
 	procCtx, procCancel := context.WithCancel(ctx)
 
-	// Create OpenAI client
-	openaiClient := NewOpenAIClient(config.OpenAIAPIKey, config.Model, config.TimeoutSeconds, logger)
+	// Create OpenAI client (pass optional OpenAI base URL from config so proxies/custom endpoints can be used)
+	openaiClient := NewOpenAIClient(config.OpenAIAPIKey, config.Model, config.TimeoutSeconds, logger, config.OpenAIBaseURL)
 
 	// Create processor
 	processor := &Processor{

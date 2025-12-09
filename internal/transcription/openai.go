@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,9 @@ type OpenAIClient struct {
 	model      string
 	httpClient *http.Client
 	logger     *logger.Logger
+	// baseURL allows overriding the default OpenAI API endpoint (e.g. for proxies).
+	// Stored without a trailing slash.
+	baseURL string
 }
 
 // OpenAIWebSocketConn represents a WebSocket connection to OpenAI
@@ -33,7 +37,37 @@ type OpenAIWebSocketConn struct {
 }
 
 // NewOpenAIClient creates a new OpenAI client
-func NewOpenAIClient(apiKey, model string, timeoutSeconds int, logger *logger.Logger) *OpenAIClient {
+var DefaultOpenAIBase = "https://api.openai.com"
+
+// OverrideOpenAIBase may be set at startup by other packages (for example, from config)
+// by calling SetOpenAIBaseURL. It takes precedence over the environment variable.
+var OverrideOpenAIBase string
+
+// SetOpenAIBaseURL allows other packages (e.g. main) to set the OpenAI base URL programmatically.
+func SetOpenAIBaseURL(u string) {
+	OverrideOpenAIBase = strings.TrimRight(u, "/")
+}
+
+// toWebSocketBase converts an http(s) base URL to the corresponding ws(s) URL.
+// e.g. https://api.example -> wss://api.example
+func toWebSocketBase(httpBase string) string {
+	b := strings.TrimRight(httpBase, "/")
+	if strings.HasPrefix(b, "https://") {
+		return "wss://" + strings.TrimPrefix(b, "https://")
+	} else if strings.HasPrefix(b, "http://") {
+		return "ws://" + strings.TrimPrefix(b, "http://")
+	}
+	// If the provided base already looks like ws:// or wss://, return as-is.
+	return b
+}
+
+// NewOpenAIClient creates a new OpenAI client
+// The client will determine the base URL to use in the following order:
+// 1. If the optional `baseURL` parameter is provided (non-empty), it will be used.
+// 2. If OverrideOpenAIBase is set via SetOpenAIBaseURL, it will be used.
+// 3. If the environment variable OPENAI_API_BASE is set, it will be used.
+// 4. Otherwise DefaultOpenAIBase ("https://api.openai.com") is used.
+func NewOpenAIClient(apiKey, model string, timeoutSeconds int, logger *logger.Logger, baseURL string) *OpenAIClient {
 	timeout := time.Duration(timeoutSeconds) * time.Second
 	if timeout <= 0 {
 		timeout = 120 * time.Second // Default to 2 minutes if not specified
@@ -43,10 +77,27 @@ func NewOpenAIClient(apiKey, model string, timeoutSeconds int, logger *logger.Lo
 		logger.Warn("OpenAI API key is empty - transcription and post-processing features will not work")
 	}
 
+	// Determine base URL (prefer explicit parameter, then override, then env, then default)
+	base := strings.TrimRight(baseURL, "/")
+	if base == "" {
+		// Prefer programmatic override if set
+		if OverrideOpenAIBase != "" {
+			base = OverrideOpenAIBase
+		} else if env := os.Getenv("OPENAI_API_BASE"); env != "" {
+			// Fall back to environment variable
+			base = env
+		} else {
+			// Final fallback to upstream default
+			base = DefaultOpenAIBase
+		}
+	}
+	base = strings.TrimRight(base, "/")
+
 	return &OpenAIClient{
 		apiKey: apiKey,
 		model:  model,
 		logger: logger.Named("openai"),
+		baseURL: base,
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
@@ -136,8 +187,11 @@ func (c *OpenAIClient) CreateSession(ctx context.Context, config Config) (string
 		return "", "", fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
+	// Build request URL using configured base URL
+	apiURL := c.baseURL + "/v1/realtime/transcription_sessions"
+
 	// Create request
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/realtime/transcription_sessions", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -176,7 +230,8 @@ func (c *OpenAIClient) CreateSession(ctx context.Context, config Config) (string
 	}
 
 	// Log the response body
-	c.logger.Debug("OpenAI API response",
+	// Log the full request payload
+	c.logger.Info("OpenAI API response",
 		logger.String("response", string(bodyBytes)))
 
 	// Parse the response
@@ -195,8 +250,9 @@ func (c *OpenAIClient) CreateSession(ctx context.Context, config Config) (string
 
 // ConnectWebSocket establishes a WebSocket connection to the transcription API with reconnection logic
 func (c *OpenAIClient) ConnectWebSocket(ctx context.Context, sessionID, clientSecret string) (*OpenAIWebSocketConn, error) {
-	// Create WebSocket URL
-	wsURL := fmt.Sprintf("wss://api.openai.com/v1/realtime?session_id=%s", url.QueryEscape(sessionID))
+	// Create WebSocket URL based on configured base URL (support proxies / alternate hosts)
+	wsBase := toWebSocketBase(c.baseURL)
+	wsURL := fmt.Sprintf("%s/v1/realtime?session_id=%s", wsBase, url.QueryEscape(sessionID))
 	c.logger.Debug("Connecting to OpenAI WebSocket", logger.String("url", wsURL))
 
 	// Create WebSocket dialer
@@ -341,8 +397,9 @@ func (c *OpenAIClient) PostProcessTranscription(ctx context.Context, content str
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(jsonData))
+	// Create HTTP request using configured base URL
+	apiURL := c.baseURL + "/v1/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -459,8 +516,9 @@ func (c *OpenAIClient) PostProcessBatch(ctx context.Context, systemPrompt string
 		logger.String("user_input", userInput),
 		logger.String("full_request", string(prettyRequest)))
 
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(jsonData))
+	// Create HTTP request using configured base URL
+	apiURL := c.baseURL + "/v1/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

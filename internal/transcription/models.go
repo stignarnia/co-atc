@@ -13,7 +13,19 @@ type TranscriptionEvent struct {
 
 // Config represents the configuration for the transcription service
 type Config struct {
+	// Authentication / endpoint configuration
 	OpenAIAPIKey          string
+	OpenAIBaseURL         string // Optional base URL for OpenAI API (e.g. proxy). If empty, the system will fall back to env/default.
+
+	// OpenAI endpoint path overrides (optional)
+	// These allow directing different API calls (session creation, websocket base, chat completions, etc.)
+	// to custom paths on a proxy or alternative provider. If left empty, the application-level defaults will be used.
+	RealtimeSessionPath        string // e.g. "/v1/realtime/sessions"
+	RealtimeWebsocketPath      string // e.g. "/v1/realtime" (used to build the ws/wss base + path)
+	TranscriptionSessionPath   string // e.g. "/v1/realtime/transcription_sessions"
+	ChatCompletionsPath        string // e.g. "/v1/chat/completions"
+
+	// Model and audio settings
 	Model                 string
 	Language              string
 	NoiseReduction        string

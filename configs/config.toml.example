@@ -176,13 +176,13 @@ transcribe_audio = false         # Not transcribing this frequency
 
 # Local VHF Stream (RTLSDR-Airband + SRT server)
 [[frequencies.sources]]
-id = "cyyz_lcl"                  
-airport = "CYYZ"                
-name = "Local"         
-frequency_mhz = 133.7         
+id = "cyyz_lcl"
+airport = "CYYZ"
+name = "Local"
+frequency_mhz = 133.7
 url = "srt://192.168.1.166:42069"
-order = 6                      
-transcribe_audio = true     
+order = 6
+transcribe_audio = true
 
 #######################################################
 # Audio Transcription Configuration
@@ -333,6 +333,33 @@ refresh_interval_minutes = 10
 
 # API endpoints and settings
 api_base_url = "https://node.windy.com/airports"
+
+# OpenAI configuration (optional)
+# - Use this to override the OpenAI/API proxy base URL and specific endpoint paths used by the app.
+# - If you only need to change the host (for a proxy), set `base_url`. If your proxy rewrites paths,
+#   you can override the per-endpoint paths below.
+# Examples:
+# base_url = "https://my-openai-proxy.example.com"
+# realtime_session_path = "/v1/realtime/sessions"
+# realtime_websocket_path = "/v1/realtime"
+# transcription_session_path = "/v1/realtime/transcription_sessions"
+# chat_completions_path = "/v1/chat/completions"
+[openai]
+# Base URL for OpenAI API requests (default: OpenAI upstream)
+base_url = "https://api.openai.com"
+
+# Optional path overrides (useful when using a proxy that exposes different paths)
+# Path used to create realtime sessions (POST)
+realtime_session_path = "/v1/realtime/sessions"
+
+# Websocket base path used for realtime websocket connections (ws/wss scheme will be inferred from base_url)
+realtime_websocket_path = "/v1/realtime"
+
+# Path used to create transcription sessions (POST)
+transcription_session_path = "/v1/realtime/transcription_sessions"
+
+# Path used for chat completions / conversational responses
+chat_completions_path = "/v1/chat/completions"
 request_timeout_seconds = 10
 max_retries = 2
 

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/yegors/co-atc/pkg/logger"
@@ -15,16 +17,42 @@ import (
 // RealtimeClient handles OpenAI realtime API interactions
 // Note: This is a simplified implementation since the OpenAI Go SDK doesn't support realtime APIs yet
 type RealtimeClient struct {
-	apiKey     string
-	httpClient *http.Client
-	config     SessionConfig
-	logger     *logger.Logger
+	apiKey        string
+	httpClient    *http.Client
+	config        SessionConfig
+	logger        *logger.Logger
+	// baseURL allows overriding the default OpenAI API endpoint (e.g. when using a proxy).
+	// It should not contain a trailing slash.
+	baseURL string
+
+	// websocketPath is the path portion used when constructing realtime websocket URLs.
+	// It can be overridden via the OPENAI_WEBSOCKET_PATH env var. Default: /v1/realtime
+	websocketPath string
 }
 
 // NewRealtimeClient creates a new OpenAI realtime client
-func NewRealtimeClient(apiKey string, config SessionConfig, logger *logger.Logger) *RealtimeClient {
+// The function accepts an optional `baseURL` parameter. If `baseURL` is non-empty it will be used.
+// Otherwise the function falls back to the OPENAI_API_BASE environment variable, then the default.
+// The websocket path can be overridden with OPENAI_WEBSOCKET_PATH; if unset a sensible default is used.
+func NewRealtimeClient(apiKey string, config SessionConfig, logger *logger.Logger, baseURL string) *RealtimeClient {
 	if apiKey == "" {
 		logger.Warn("OpenAI API key is empty - ATC Chat features will not work")
+	}
+
+	// Determine base URL (prefer explicit baseURL parameter, then OPENAI_API_BASE env, then default).
+	base := strings.TrimRight(baseURL, "/")
+	if base == "" {
+		base = os.Getenv("OPENAI_API_BASE")
+	}
+	if base == "" {
+		base = "https://api.openai.com"
+	}
+	base = strings.TrimRight(base, "/")
+
+	// Determine websocket path: prefer explicit env override, otherwise default to standard OpenAI realtime path.
+	wsPath := strings.TrimSpace(os.Getenv("OPENAI_WEBSOCKET_PATH"))
+	if wsPath == "" {
+		wsPath = "/v1/realtime"
 	}
 
 	return &RealtimeClient{
@@ -34,7 +62,23 @@ func NewRealtimeClient(apiKey string, config SessionConfig, logger *logger.Logge
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		baseURL:       base,
+		websocketPath: wsPath,
 	}
+}
+
+// GetBaseURL returns the configured base URL (no trailing slash).
+func (rc *RealtimeClient) GetBaseURL() string {
+	return strings.TrimRight(rc.baseURL, "/")
+}
+
+// GetWebsocketPath returns the configured websocket path (leading slash included).
+// If no explicit value was configured, it returns the default "/v1/realtime".
+func (rc *RealtimeClient) GetWebsocketPath() string {
+	if rc.websocketPath == "" {
+		return "/v1/realtime"
+	}
+	return rc.websocketPath
 }
 
 // SessionRequest represents the request to create a realtime session
@@ -137,7 +181,8 @@ func (rc *RealtimeClient) CreateSession(ctx context.Context, systemPrompt string
 
 	// Log the full request payload
 	rc.logger.Info("=== OpenAI Session Creation Request ===")
-	rc.logger.Info("Request URL: https://api.openai.com/v1/realtime/sessions")
+	apiURL := fmt.Sprintf("%s/v1/realtime/sessions", strings.TrimRight(rc.baseURL, "/"))
+	rc.logger.Info("Request URL: "+apiURL)
 	rc.logger.Info("Request Headers:",
 		logger.String("Content-Type", "application/json"),
 		logger.String("Authorization", "Bearer [REDACTED]"),
@@ -145,7 +190,7 @@ func (rc *RealtimeClient) CreateSession(ctx context.Context, systemPrompt string
 	rc.logger.Info("Request Payload:", logger.String("json", string(jsonData)))
 
 	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/realtime/sessions", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}

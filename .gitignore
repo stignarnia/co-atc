@@ -38,3 +38,6 @@ Thumbs.db
 
 /configs/config.toml
 config.toml
+
+# Opensky API credentials
+/opensky

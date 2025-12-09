@@ -20,6 +20,7 @@ type Config struct {
 	PostProcessing PostProcessingConfig `toml:"post_processing"` // Post-processing settings for transcriptions
 	FlightPhases   FlightPhasesConfig   `toml:"flight_phases"`   // Flight phase detection settings
 	Weather        WeatherConfig        `toml:"wx"`              // Weather data fetching and caching settings
+	OpenAI         OpenAIConfig         `toml:"openai"`          // OpenAI service settings (base URL, etc.)
 	ATCChat        ATCChatConfig        `toml:"atc_chat"`        // ATC Chat voice assistant settings
 	Templating     TemplatingConfig     `toml:"templating"`      // Shared templating system settings
 }
@@ -39,7 +40,11 @@ type ServerConfig struct {
 // ADSBConfig contains ADS-B aircraft tracking data source configuration
 type ADSBConfig struct {
 	// Source selection
-	SourceType string `toml:"source_type"` // Data source type: "local" (e.g., dump1090) or "external" (e.g., ADS-B Exchange API)
+	// Allowed values:
+	// - "local": Use a local ADS-B receiver (e.g., dump1090 / tar1090)
+	// - "external-adsbexchangelike": External ADS-B provider with center point + radius (e.g., ADS-B Exchange style)
+	// - "external-opensky": OpenSky REST API which requires a bounding box (lamin/lomin/lamax/lomax) and OAuth2 credentials
+	SourceType string `toml:"source_type"`
 
 	// Legacy field - deprecated, use LocalSourceURL instead
 	SourceURL string `toml:"source_url"` // DEPRECATED: Legacy URL field for backward compatibility
@@ -47,11 +52,22 @@ type ADSBConfig struct {
 	// Local source settings (used when source_type = "local")
 	LocalSourceURL string `toml:"local_source_url"` // URL for local ADS-B source (e.g., http://192.168.1.10/tar1090/data/aircraft.json)
 
-	// External API source settings (used when source_type = "external")
+	// External API source settings (used when source_type = "external-adsbexchangelike")
+	// This preserves the existing RapidAPI / ADS-B Exchange style integration (center point + radius).
 	ExternalSourceURL string `toml:"external_source_url"` // URL template for external API with format placeholders for lat, lon, and distance
 	APIHost           string `toml:"api_host"`            // API host header value (e.g., for RapidAPI)
 	APIKey            string `toml:"api_key"`             // API key for authentication with external service
 	SearchRadiusNM    int    `toml:"search_radius_nm"`    // Search radius in nautical miles for external API queries
+
+	// OpenSky specific settings (used when source_type = "external-opensky")
+	// The OpenSky API requires:
+	// - OAuth2 credentials (client credentials) stored in a JSON file (path configured here)
+	// - A bounding box defined by lamin/lomin/lamax/lomax
+	OpenSkyCredentialsPath string  `toml:"opensky_credentials_path"` // Path to OpenSky credentials JSON (e.g., "opensky/credentials.json")
+	OpenSkyBBoxLamin       float64 `toml:"opensky_bbox_lamin"`       // Bounding box minimum latitude (lamin)
+	OpenSkyBBoxLomin       float64 `toml:"opensky_bbox_lomin"`       // Bounding box minimum longitude (lomin)
+	OpenSkyBBoxLamax       float64 `toml:"opensky_bbox_lamax"`       // Bounding box maximum latitude (lamax)
+	OpenSkyBBoxLomax       float64 `toml:"opensky_bbox_lomax"`       // Bounding box maximum longitude (lomax)
 
 	// Common settings for both source types
 	FetchIntervalSecs        int    `toml:"fetch_interval_seconds"`      // How often to fetch new aircraft data (in seconds)
@@ -87,10 +103,11 @@ type StationConfig struct {
 // TranscriptionConfig contains settings for audio transcription services
 type TranscriptionConfig struct {
 	// OpenAI API settings
-	OpenAIAPIKey string `toml:"openai_api_key"` // OpenAI API key for transcription service
-	Model        string `toml:"model"`          // OpenAI model to use (e.g., "gpt-4o-transcribe")
-	Language     string `toml:"language"`       // Primary language for transcription (e.g., "en" for English)
-	PromptPath   string `toml:"prompt_path"`    // Path to the system prompt file for transcription
+	OpenAIAPIKey   string `toml:"openai_api_key"`       // OpenAI API key for transcription service
+	OpenAIBaseURL  string `toml:"openai_api_base_url"`  // Optional OpenAI base URL (e.g., for proxies). Defaults to https://api.openai.com
+	Model          string `toml:"model"`                // OpenAI model to use (e.g., "gpt-4o-transcribe")
+	Language       string `toml:"language"`             // Primary language for transcription (e.g., "en" for English)
+	PromptPath     string `toml:"prompt_path"`          // Path to the system prompt file for transcription
 
 	// Audio processing settings
 	NoiseReduction string `toml:"noise_reduction"` // Noise reduction mode: "near_field", "far_field", or "none"
@@ -316,13 +333,28 @@ func (c *Config) Validate() error {
 		c.ADSB.SourceType = "local" // Default to local if not specified
 	}
 
-	if c.ADSB.SourceType != "local" && c.ADSB.SourceType != "external" {
-		return fmt.Errorf("invalid ADSB source type: %s (must be 'local' or 'external')", c.ADSB.SourceType)
+	// Backwards-compatibility: map legacy "external" value to the new explicit name
+	if c.ADSB.SourceType == "external" {
+		c.ADSB.SourceType = "external-adsbexchangelike"
 	}
 
-	// Handle legacy configuration
-	if c.ADSB.SourceType == "local" && c.ADSB.LocalSourceURL == "" && c.ADSB.SourceURL != "" {
-		c.ADSB.LocalSourceURL = c.ADSB.SourceURL
+	// Accept the new explicit external types
+	if c.ADSB.SourceType != "local" &&
+		c.ADSB.SourceType != "external-adsbexchangelike" &&
+		c.ADSB.SourceType != "external-opensky" {
+		return fmt.Errorf("invalid ADSB source type: %s (must be 'local', 'external-adsbexchangelike', or 'external-opensky')", c.ADSB.SourceType)
+	}
+
+	// Handle legacy configuration fields:
+	// - If a legacy `source_url` was used in the config, copy it to the appropriate new field
+	//   depending on the resolved source type (local vs external-adsbexchangelike).
+	if c.ADSB.SourceURL != "" {
+		if c.ADSB.SourceType == "local" && c.ADSB.LocalSourceURL == "" {
+			c.ADSB.LocalSourceURL = c.ADSB.SourceURL
+		}
+		if c.ADSB.SourceType == "external-adsbexchangelike" && c.ADSB.ExternalSourceURL == "" {
+			c.ADSB.ExternalSourceURL = c.ADSB.SourceURL
+		}
 	}
 
 	// Validate source URL based on source type
@@ -330,18 +362,46 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("local_source_url is required when source_type is local")
 	}
 
-	if c.ADSB.SourceType == "external" {
+	// Validation for ADS-B Exchange style external source (center point + radius)
+	if c.ADSB.SourceType == "external-adsbexchangelike" {
 		if c.ADSB.ExternalSourceURL == "" {
-			return fmt.Errorf("external_source_url is required when source_type is external")
+			return fmt.Errorf("external_source_url is required when source_type is external-adsbexchangelike")
 		}
 		if c.ADSB.APIHost == "" {
-			return fmt.Errorf("api_host is required when source_type is external")
+			return fmt.Errorf("api_host is required when source_type is external-adsbexchangelike")
 		}
 		if c.ADSB.APIKey == "" {
-			return fmt.Errorf("api_key is required when source_type is external")
+			return fmt.Errorf("api_key is required when source_type is external-adsbexchangelike")
 		}
 		if c.ADSB.SearchRadiusNM <= 0 {
-			return fmt.Errorf("search_radius_nm must be positive when source_type is external")
+			return fmt.Errorf("search_radius_nm must be positive when source_type is external-adsbexchangelike")
+		}
+	}
+
+	// Validation for OpenSky external source (requires OAuth2 credentials file + bounding box)
+	if c.ADSB.SourceType == "external-opensky" {
+		if c.ADSB.OpenSkyCredentialsPath == "" {
+			return fmt.Errorf("opensky_credentials_path is required when source_type is external-opensky")
+		}
+
+		// Check if bounding box is set
+		isBBoxSet := c.ADSB.OpenSkyBBoxLamin != 0 || c.ADSB.OpenSkyBBoxLamax != 0 ||
+			c.ADSB.OpenSkyBBoxLomin != 0 || c.ADSB.OpenSkyBBoxLomax != 0
+
+		// If bounding box is NOT set, we require a positive search radius (to derive it)
+		if !isBBoxSet {
+			if c.ADSB.SearchRadiusNM <= 0 {
+				return fmt.Errorf("opensky_bbox_lamin/lomin/lamax/lomax (or positive search_radius_nm) are required when source_type is external-opensky")
+			}
+			// Implicitly valid: we will derive bbox from station + radius in the client
+		} else {
+			// Basic bounding box sanity checks if it IS set
+			if c.ADSB.OpenSkyBBoxLamin >= c.ADSB.OpenSkyBBoxLamax {
+				return fmt.Errorf("opensky_bbox_lamin must be less than opensky_bbox_lamax")
+			}
+			if c.ADSB.OpenSkyBBoxLomin >= c.ADSB.OpenSkyBBoxLomax {
+				return fmt.Errorf("opensky_bbox_lomin must be less than opensky_bbox_lomax")
+			}
 		}
 	}
 
@@ -395,6 +455,32 @@ func (c *Config) Validate() error {
 	// Validate OpenAI API keys for enabled features
 	if err := c.ValidateOpenAIKeys(); err != nil {
 		return err
+	}
+
+	// Ensure OpenAI base URL and endpoint paths are set to sensible defaults if not configured.
+	// This enables users to override the OpenAI endpoint and path mappings in configs/config.toml under [openai].
+	// Example:
+	// [openai]
+	// base_url = "https://your-proxy.example.com"
+	// realtime_session_path = "/v1/realtime/sessions"
+	// realtime_websocket_path = "/v1/realtime"
+	// transcription_session_path = "/v1/realtime/transcription_sessions"
+	// chat_completions_path = "/v1/chat/completions"
+	if c.OpenAI.BaseURL == "" {
+		c.OpenAI.BaseURL = "https://api.openai.com"
+	}
+	// Default endpoint paths (these can be overridden in config to match proxy or alternative vendor)
+	if c.OpenAI.RealtimeSessionPath == "" {
+		c.OpenAI.RealtimeSessionPath = "/v1/realtime/sessions"
+	}
+	if c.OpenAI.RealtimeWebsocketPath == "" {
+		c.OpenAI.RealtimeWebsocketPath = "/v1/realtime"
+	}
+	if c.OpenAI.TranscriptionSessionPath == "" {
+		c.OpenAI.TranscriptionSessionPath = "/v1/realtime/transcription_sessions"
+	}
+	if c.OpenAI.ChatCompletionsPath == "" {
+		c.OpenAI.ChatCompletionsPath = "/v1/chat/completions"
 	}
 
 	return nil
@@ -671,6 +757,36 @@ type WeatherConfig struct {
 	FetchNOTAMs            bool   `toml:"fetch_notams"`             // Whether to fetch NOTAM data
 	CacheExpiryMinutes     int    `toml:"cache_expiry_minutes"`     // How long to keep cached data if refresh fails
 }
+
+// OpenAIConfig contains OpenAI service configuration such as base URL and endpoint path overrides.
+// This allows using self-hosted or proxy endpoints instead of the default api.openai.com,
+// and lets you override the specific API paths used by the application (realtime session creation,
+// transcription session creation, websocket base path, and chat completions).
+type OpenAIConfig struct {
+	// BaseURL is the base endpoint for OpenAI API requests, for example:
+	// - "https://api.openai.com" (default)
+	// - "https://your-proxy.example.com/openai"
+	// If empty, the application will default to "https://api.openai.com".
+	BaseURL string `toml:"base_url"`
+
+ 	// RealtimeSessionPath is the path used to create realtime sessions (POST).
+ 	// Default: /v1/realtime/sessions
+ 	RealtimeSessionPath string `toml:"realtime_session_path"`
+
+ 	// RealtimeWebsocketPath is the base path used for building websocket URLs (wss/ws).
+ 	// The websocket URL is constructed by converting the BaseURL scheme (http->ws, https->wss)
+ 	// and appending this path and query params (e.g. ?session_id=...).
+ 	// Default: /v1/realtime
+ 	RealtimeWebsocketPath string `toml:"realtime_websocket_path"`
+
+ 	// TranscriptionSessionPath is the path used to create transcription sessions (POST).
+ 	// Default: /v1/realtime/transcription_sessions
+ 	TranscriptionSessionPath string `toml:"transcription_session_path"`
+
+ 	// ChatCompletionsPath is the path used for chat completions / responses.
+ 	// Default: /v1/chat/completions
+ 	ChatCompletionsPath string `toml:"chat_completions_path"`
+ }
 
 // ATCChatConfig contains ATC Chat voice assistant configuration
 type ATCChatConfig struct {

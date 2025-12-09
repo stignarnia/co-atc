@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -359,10 +362,41 @@ func (h *ATCChatHandlers) connectToOpenAI(ctx context.Context, session *atcchat.
 	var url string
 	var headers http.Header
 
-	// Check if we have an OpenAI session created via REST API
+	// Compose websocket URL using configured realtime base + websocket path so proxies are respected.
+	// Prefer the realtime client's configured base; fall back to env var, then default.
+	base := h.service.GetRealtimeBaseURL()
+	if base == "" {
+		// As a safety fallback, also check env var (mirrors other clients' behavior).
+		base = strings.TrimRight(strings.TrimSpace(strings.Trim(os.Getenv("OPENAI_API_BASE"), "/")), "/")
+	}
+	if base == "" {
+		base = "https://api.openai.com"
+	}
+	base = strings.TrimRight(base, "/")
+
+	// Derive websocket scheme from base URL scheme (https -> wss, http -> ws)
+	wsBase := base
+	if strings.HasPrefix(strings.ToLower(base), "https://") {
+		wsBase = "wss://" + strings.TrimPrefix(base, "https://")
+	} else if strings.HasPrefix(strings.ToLower(base), "http://") {
+		wsBase = "ws://" + strings.TrimPrefix(base, "http://")
+	} else {
+		// If base has no scheme, assume secure websocket
+		wsBase = "wss://" + base
+	}
+
+	// Use configured realtime websocket path from service (falls back to default if unset)
+	realtimePath := h.service.GetRealtimeWebsocketPath()
+	if realtimePath == "" {
+		realtimePath = "/v1/realtime"
+	}
+
+	// Build final websocket URL with the model query parameter
+	wsURL := fmt.Sprintf("%s%s?model=%s", strings.TrimRight(wsBase, "/"), realtimePath, neturl.QueryEscape(model))
+
+	// Set headers and auth depending on whether we have a session-based client secret
 	if session.OpenAISessionID != "" && session.ClientSecret != "" {
-		// Use session-based WebSocket connection with model parameter
-		url = fmt.Sprintf("wss://api.openai.com/v1/realtime?model=%s", model)
+		url = wsURL
 		headers = http.Header{}
 		headers.Set("Authorization", "Bearer "+session.ClientSecret)
 		headers.Set("OpenAI-Beta", "realtime=v1")
@@ -373,8 +407,7 @@ func (h *ATCChatHandlers) connectToOpenAI(ctx context.Context, session *atcchat.
 			logger.String("url", url),
 			logger.String("auth_type", "session_client_secret"))
 	} else {
-		// Fallback to direct WebSocket connection
-		url = "wss://api.openai.com/v1/realtime?model=" + model
+		url = wsURL
 		headers = http.Header{}
 		headers.Set("Authorization", "Bearer "+config.OpenAIAPIKey)
 		headers.Set("OpenAI-Beta", "realtime=v1")

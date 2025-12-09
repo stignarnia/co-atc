@@ -73,11 +73,12 @@ func NewService(
 		Model:             config.ATCChat.RealtimeModel,
 	}
 
-	// Create realtime client
+	// Create realtime client (pass configured OpenAI base URL from main config)
 	realtimeClient := NewRealtimeClient(
 		config.ATCChat.OpenAIAPIKey,
 		sessionConfig,
 		logger,
+		config.OpenAI.BaseURL,
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -575,6 +576,23 @@ func (s *Service) GenerateSystemPromptWithVariables(sessionID string) (*PromptWi
 // GetRealtimeModel returns the configured realtime model
 func (s *Service) GetRealtimeModel() string {
 	return s.config.RealtimeModel
+}
+
+// GetRealtimeBaseURL returns the base URL used by the RealtimeClient (e.g., for constructing websocket URLs).
+// It returns an empty string if the realtime client is not initialized.
+func (s *Service) GetRealtimeBaseURL() string {
+	if s.realtimeClient == nil {
+		return ""
+	}
+	return s.realtimeClient.GetBaseURL()
+}
+
+// GetRealtimeWebsocketPath returns the configured realtime websocket path used by the RealtimeClient
+func (s *Service) GetRealtimeWebsocketPath() string {
+	if s.realtimeClient == nil {
+		return ""
+	}
+	return s.realtimeClient.GetWebsocketPath()
 }
 
 // IsEnabled returns whether the ATC chat service is enabled

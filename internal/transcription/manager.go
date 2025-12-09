@@ -3,6 +3,7 @@ package transcription
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -301,8 +302,8 @@ func (m *TranscriptionManager) StartPostProcessing(ctx context.Context) error {
 		return nil
 	}
 
-	// Create OpenAI client for post-processing
-	openaiClient := NewOpenAIClient(m.openAIAPIKey, m.postProcessingConfig.Model, m.postProcessingConfig.TimeoutSeconds, m.logger)
+	// Create OpenAI client for post-processing (pass explicit OpenAI base if configured in environment)
+	openaiClient := NewOpenAIClient(m.openAIAPIKey, m.postProcessingConfig.Model, m.postProcessingConfig.TimeoutSeconds, m.logger, os.Getenv("OPENAI_API_BASE"))
 
 	// Create post-processor
 	var err error
