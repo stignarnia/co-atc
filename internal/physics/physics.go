@@ -2,6 +2,10 @@ package physics
 
 import (
 	"math"
+	"time"
+
+	"github.com/westphae/geomag/pkg/egm96"
+	"github.com/westphae/geomag/pkg/wmm"
 )
 
 // Constants
@@ -11,10 +15,16 @@ const (
 	G           = 9.80665  // Gravity (m/s^2)
 	T0          = 288.15   // Standard Sea Level Temperature (K)
 	P0          = 1013.25  // Standard Sea Level Pressure (hPa)
-	L           = 0.0065   // Temperature Lapse Rate (K/m)
+	L           = 0.0065   // Temperature Lapse Rate (K/m) in Troposphere
 	ZeroCelsius = 273.15   // 0°C in Kelvin
 	KnotsToMs   = 0.514444 // Conversion factor from Knots to m/s
 	MsToKnots   = 1.94384  // Conversion factor from m/s to Knots
+
+	// ISA Layer Boundaries
+	TropopauseAltM    = 11000.0 // 11 km
+	TropopauseAltFt   = 36089.2 // ~36,089 ft
+	StratosphereTempK = 216.65  // Constant temperature in Stratosphere
+	TropopausePress   = 226.32  // Pressure at Tropopause (hPa)
 )
 
 // CalculateSoundSpeed returns the speed of sound in m/s for a given temperature in Kelvin
@@ -37,6 +47,14 @@ func CalculateMach(tasKnots float64, tempCelsius float64) float64 {
 	return tasMs / a
 }
 
+// CalculateTAT returns Total Air Temperature (Celsius) given OAT (Celsius) and Mach number
+// Formula: TAT_K = OAT_K * (1 + 0.2 * M^2)
+func CalculateTAT(oatCelsius float64, mach float64) float64 {
+	oatK := oatCelsius + ZeroCelsius
+	tatK := oatK * (1.0 + 0.2*mach*mach)
+	return tatK - ZeroCelsius
+}
+
 // CalculateTASFromMach returns True Airspeed in knots given Mach and Temperature (Celsius)
 func CalculateTASFromMach(mach float64, tempCelsius float64) float64 {
 	tempK := tempCelsius + ZeroCelsius
@@ -46,30 +64,43 @@ func CalculateTASFromMach(mach float64, tempCelsius float64) float64 {
 	return tasMs * MsToKnots
 }
 
-// CalculateIASWithTemp calculates IAS (knots) from TAS (knots), Pressure (hPa), and Temp (Celsius)
-func CalculateIASWithTemp(tasKnots float64, pressureHPa float64, tempCelsius float64) float64 {
-	// rho = P / (R * T)
-	// P in Pa, T in K
+// CalculateCAS calculates Calibrated Airspeed (CAS) using compressible flow equations (Saint-Venant).
+// This is more accurate than simple IAS/EAS formulas for Mach > 0.3.
+// Inputs: TAS (knots), Pressure Altitude (ft), Temperature (Celsius)
+func CalculateCAS(tasKnots float64, pressAltFt float64, tempCelsius float64) float64 {
+	// 1. Get Static Pressure (P) at altitude
+	pHPa := AltitudeToPressure(pressAltFt)
+	pPa := pHPa * 100.0 // Convert hPa to Pa
+	p0Pa := P0 * 100.0  // Standard Sea Level Pressure (Pa)
 
-	pPa := pressureHPa * 100
-	tK := tempCelsius + ZeroCelsius
-	rho := pPa / (R * tK)
+	// 2. Calculate Mach Number
+	mach := CalculateMach(tasKnots, tempCelsius)
 
-	// Sea level density rho0 = 1.225 kg/m^3
-	rho0 := 1.225
+	// 3. Saint-Venant Equation for Impact Pressure (qc)
+	// qc = P * [ (1 + 0.2 * M^2)^3.5 - 1 ]
+	qc := pPa * (math.Pow(1+0.2*mach*mach, 3.5) - 1)
 
-	sigma := rho / rho0
-	if sigma <= 0 {
+	// 4. Calculate CAS from Impact Pressure
+	// CAS = a0 * sqrt( 5 * [ (qc/P0 + 1)^(1/3.5) - 1 ] )
+	// a0 = Standard Speed of Sound at Sea Level (approx 661.47 knots)
+	a0 := CalculateSoundSpeed(T0) * MsToKnots
+
+	term := (qc / p0Pa) + 1
+	if term < 0 {
 		return 0
 	}
 
-	return tasKnots * math.Sqrt(sigma)
+	cas := a0 * math.Sqrt(5*(math.Pow(term, 1/3.5)-1))
+	return cas
 }
 
 // CalculateDensityAltitude returns density altitude in feet
 func CalculateDensityAltitude(pressureAltFt float64, tempCelsius float64) float64 {
 	// ISA Temp at pressure altitude
 	isaTempK := T0 - (L * (pressureAltFt * 0.3048))
+	if pressureAltFt > TropopauseAltFt {
+		isaTempK = StratosphereTempK
+	}
 	isaTempC := isaTempK - ZeroCelsius
 
 	// DA = PA + 120 * (OAT - ISA_Temp)
@@ -95,15 +126,27 @@ func HeadingToVector(headingDeg float64, magnitude float64) Vector2D {
 	}
 }
 
-// AltitudeToPressure converts pressure altitude in feet to pressure in hPa (Standard Atmosphere)
+// AltitudeToPressure converts pressure altitude in feet to pressure in hPa
+// Uses Standard Atmosphere model, supporting Troposphere and Stratosphere (up to 20km approx)
 func AltitudeToPressure(altFt float64) float64 {
-	if altFt < 0 {
-		altFt = 0
+	altM := altFt * 0.3048
+	if altM < 0 {
+		altM = 0
 	}
-	// P = P0 * (1 - L*h/T0)^(gM/RL)
-	// P0 = 1013.25
-	// exponent constant ~ 5.25588
-	return P0 * math.Pow(1-(L*(altFt*0.3048)/T0), (G*0.0289644)/(R*L))
+
+	if altM <= TropopauseAltM {
+		// Troposphere Model (0 - 11km)
+		// P = P0 * (1 - L*h/T0)^(g/RL)
+		exponent := (G) / (R * L)
+		base := 1 - (L * altM / T0)
+		return P0 * math.Pow(base, exponent)
+	} else {
+		// Stratosphere Model (> 11km)
+		// P = P_trop * exp( -g*(h - h_trop) / (R * T_strat) )
+		relAlt := altM - TropopauseAltM
+		exponent := -(G * relAlt) / (R * StratosphereTempK)
+		return TropopausePress * math.Exp(exponent)
+	}
 }
 
 // SolveWindTriangle calculates TAS and True Heading given Ground Speed, Track, and Wind Vector
@@ -111,7 +154,7 @@ func AltitudeToPressure(altFt float64) float64 {
 // track: Track (degrees)
 // windU: Wind U component (m/s) (+East)
 // windV: Wind V component (m/s) (+North)
-// Returns: tas (knots), heading (degrees)
+// Returns: tas (knots), trueHeading (degrees)
 func SolveWindTriangle(gsKnots float64, trackDeg float64, windU_Ms float64, windV_Ms float64) (float64, float64) {
 	// 1. Convert everything to consistent units (Knots and Vectors)
 	windU_Kts := windU_Ms * MsToKnots
@@ -151,4 +194,23 @@ func SolveWindTriangle(gsKnots float64, trackDeg float64, windU_Ms float64, wind
 	}
 
 	return tas, heading
+}
+
+// CalculateMagneticVariation calculates the magnetic declination for a given position and time
+// Returns declination in degrees (+East, -West)
+func CalculateMagneticVariation(lat, lon, altFt float64, date time.Time) float64 {
+	// Convert altitude to meters for WMM
+	altM := altFt * 0.3048
+
+	// Create location from Geodetic coordinates
+	loc := egm96.NewLocationGeodetic(lat, lon, altM)
+
+	// Calculate magnetic field
+	mag, err := wmm.CalculateWMMMagneticField(loc, date)
+	if err != nil {
+		// Return 0 for safety if calculation fails
+		return 0.0
+	}
+
+	return mag.D() // Declination
 }

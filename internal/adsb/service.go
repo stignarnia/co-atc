@@ -2188,26 +2188,41 @@ func (s *Service) ProcessRawData(rawData *RawAircraftData) []*Aircraft {
 				if raw.GS > 0 {
 					tas, trueHeading := physics.SolveWindTriangle(raw.GS, raw.Track, u, v)
 					raw.TAS = float64(tas)
+					raw.TrueHeading = float64(trueHeading)
 
-					// Use MagHeading as placeholder for TrueHeading or calculate Magnetic if we had Var
-					if raw.MagHeading == 0 {
-						raw.MagHeading = float64(trueHeading)
+					// Calculate Magnetic Variation using WMM
+					declination := physics.CalculateMagneticVariation(raw.Lat, raw.Lon, alt, now)
+
+					// Mag = True - Declination
+					magHeading := raw.TrueHeading - declination
+					if magHeading < 0 {
+						magHeading += 360
 					}
+					if magHeading >= 360 {
+						magHeading -= 360
+					}
+					raw.MagHeading = magHeading
 
 					// Calculate Mach
 					mach := physics.CalculateMach(tas, tempC)
 					raw.Mach = float64(mach)
 
-					// Calculate IAS (Derived from TAS and Density using GFS Temp and Altitude Pressure)
-					pressure := physics.AltitudeToPressure(alt)
+					// Calculate TAT (Total Air Temperature) due to Ram Rise
+					tat := physics.CalculateTAT(tempC, mach)
+					raw.TAT = float64(tat)
 
-					ias := physics.CalculateIASWithTemp(tas, pressure, tempC)
-					raw.IAS = float64(ias)
-					s.logger.Debug("Calculated IAS",
+					// Calculate CAS (Calibrated Airspeed) - previously IAS
+					// Using compressible flow equations for higher accuracy
+					cas := physics.CalculateCAS(tas, alt, tempC)
+					raw.IAS = float64(cas)
+
+					s.logger.Debug("Calculated Physics",
 						logger.String("hex", raw.Hex),
 						logger.Float64("tas", tas),
-						logger.Float64("pressure", pressure),
-						logger.Float64("ias", raw.IAS))
+						logger.Float64("cas", cas),
+						logger.Float64("true_heading", raw.TrueHeading),
+						logger.Float64("mag_heading", raw.MagHeading),
+						logger.Float64("declination", declination))
 
 					raw.OAT = float64(tempC)
 				}
