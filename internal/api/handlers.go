@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -647,24 +648,90 @@ func (h *Handler) GetWeatherData(w http.ResponseWriter, r *http.Request) {
 // fetchRunwayData loads runway data from the specified file and calculates extended centerlines
 func (h *Handler) fetchRunwayData(filePath string) (interface{}, error) {
 	// Read the runway data file
-	data, err := os.ReadFile(filePath)
+	f, err := os.Open(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read runway data file: %w", err)
+		return nil, fmt.Errorf("failed to open runway data file: %w", err)
+	}
+	defer f.Close()
+
+	reader := csv.NewReader(f)
+	records, err := reader.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse runway data CSV: %w", err)
 	}
 
-	// Parse the JSON data
-	var runwayData struct {
-		Airport          string `json:"airport"`
-		RunwayThresholds map[string]map[string]struct {
-			Latitude  float64 `json:"latitude"`
-			Longitude float64 `json:"longitude"`
-		} `json:"runway_thresholds"`
-	}
-	if err := json.Unmarshal(data, &runwayData); err != nil {
-		return nil, fmt.Errorf("failed to parse runway data: %w", err)
+	if len(records) < 2 {
+		return nil, fmt.Errorf("runway data CSV is empty or missing headers")
 	}
 
-	// Define the point structure with distance field
+	// Map headers
+	headers := records[0]
+	colIdx := make(map[string]int)
+	for i, h := range headers {
+		colIdx[h] = i
+	}
+
+	// Required columns
+	required := []string{"airport_ident", "le_ident", "le_latitude_deg", "le_longitude_deg", "he_ident", "he_latitude_deg", "he_longitude_deg"}
+	for _, c := range required {
+		if _, ok := colIdx[c]; !ok {
+			return nil, fmt.Errorf("runway data CSV missing column: %s", c)
+		}
+	}
+
+	// Helper to parse floats
+	getFloat := func(record []string, col string) (float64, bool) {
+		val := record[colIdx[col]]
+		if val == "" {
+			return 0, false
+		}
+		f, err := strconv.ParseFloat(val, 64)
+		return f, err == nil
+	}
+
+	// Structure for thresholds
+	type Threshold struct {
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
+	}
+
+	// Filter and parse runways for current station
+	runwayThresholds := make(map[string]map[string]Threshold)
+	targetAirport := h.config.Station.AirportCode
+	h.logger.Info("Fetching runway data", logger.String("airport", targetAirport), logger.String("path", filePath))
+
+	foundCount := 0
+	for _, record := range records[1:] {
+		// Case-insensitive comparison just to be safe, though typically upper case
+		if !strings.EqualFold(record[colIdx["airport_ident"]], targetAirport) {
+			continue
+		}
+
+		leLat, leOk := getFloat(record, "le_latitude_deg")
+		leLon, leOk2 := getFloat(record, "le_longitude_deg")
+		heLat, heOk := getFloat(record, "he_latitude_deg")
+		heLon, heOk2 := getFloat(record, "he_longitude_deg")
+
+		if !leOk || !leOk2 || !heOk || !heOk2 {
+			h.logger.Warn("Skipping runway with missing coordinates",
+				logger.String("airport", targetAirport),
+				logger.String("runway", fmt.Sprintf("%s/%s", record[colIdx["le_ident"]], record[colIdx["he_ident"]])))
+			continue
+		}
+
+		leIdent := record[colIdx["le_ident"]]
+		heIdent := record[colIdx["he_ident"]]
+		runwayID := fmt.Sprintf("%s/%s", leIdent, heIdent)
+
+		runwayThresholds[runwayID] = map[string]Threshold{
+			leIdent: {Latitude: leLat, Longitude: leLon},
+			heIdent: {Latitude: heLat, Longitude: heLon},
+		}
+		foundCount++
+	}
+	h.logger.Info("Runway data parsing completed", logger.Int("runways_found", foundCount))
+
+	// Define point structure
 	type Point struct {
 		Latitude  float64 `json:"latitude"`
 		Longitude float64 `json:"longitude"`
@@ -673,34 +740,34 @@ func (h *Handler) fetchRunwayData(filePath string) (interface{}, error) {
 
 	// Create the response structure with extended centerlines
 	response := struct {
-		Airport          string `json:"airport"`
-		RunwayThresholds map[string]map[string]struct {
-			Latitude  float64 `json:"latitude"`
-			Longitude float64 `json:"longitude"`
-		} `json:"runway_thresholds"`
-		RunwayExtensions map[string]map[string][]Point `json:"runway_extensions"`
+		Airport          string                          `json:"airport"`
+		RunwayThresholds map[string]map[string]Threshold `json:"runway_thresholds"`
+		RunwayExtensions map[string]map[string][]Point   `json:"runway_extensions"`
 	}{
-		Airport:          runwayData.Airport,
-		RunwayThresholds: runwayData.RunwayThresholds,
+		Airport:          targetAirport,
+		RunwayThresholds: runwayThresholds,
 		RunwayExtensions: make(map[string]map[string][]Point),
 	}
 
 	// Calculate extended centerlines for each runway
-	for runwayID, thresholds := range runwayData.RunwayThresholds {
+	for runwayID, thresholds := range runwayThresholds {
 		response.RunwayExtensions[runwayID] = make(map[string][]Point)
 
 		// Process each end of the runway
 		for endID, threshold := range thresholds {
 			// Find the opposite end
-			var oppositeThreshold struct {
-				Latitude  float64 `json:"latitude"`
-				Longitude float64 `json:"longitude"`
-			}
+			var oppositeThreshold Threshold
+			foundOpposite := false
 			for otherEndID, otherThreshold := range thresholds {
 				if otherEndID != endID {
 					oppositeThreshold = otherThreshold
+					foundOpposite = true
 					break
 				}
+			}
+
+			if !foundOpposite {
+				continue
 			}
 
 			// Calculate the bearing from this threshold to the opposite threshold
