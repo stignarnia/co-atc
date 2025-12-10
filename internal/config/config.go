@@ -449,12 +449,6 @@ func (c *Config) Validate() error {
 		if c.ADSB.ExternalSourceURL == "" {
 			return fmt.Errorf("external_source_url is required when source_type is external-adsbexchangelike")
 		}
-		if c.ADSB.APIHost == "" {
-			return fmt.Errorf("api_host is required when source_type is external-adsbexchangelike")
-		}
-		if c.ADSB.APIKey == "" {
-			return fmt.Errorf("api_key is required when source_type is external-adsbexchangelike")
-		}
 		if c.ADSB.SearchRadiusNM <= 0 {
 			return fmt.Errorf("search_radius_nm must be positive when source_type is external-adsbexchangelike")
 		}

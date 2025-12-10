@@ -151,8 +151,12 @@ func (c *Client) fetchExternalData(ctx context.Context) (*RawAircraftData, error
 	}
 
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("x-rapidapi-host", c.apiHost)
-	req.Header.Set("x-rapidapi-key", c.apiKey)
+	if c.apiHost != "" {
+		req.Header.Set("x-rapidapi-host", c.apiHost)
+	}
+	if c.apiKey != "" {
+		req.Header.Set("x-rapidapi-key", c.apiKey)
+	}
 
 	c.logger.Debug("Fetching external ADS-B data",
 		logger.String("url", urlStr),

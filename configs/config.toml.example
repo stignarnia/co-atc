@@ -33,8 +33,14 @@ static_files_dir = "www"
 #######################################################
 [adsb]
 # Data source type:
-# - "local": Use a local ADS-B receiver (e.g., dump1090)
-# - "external": Use an external API service (e.g., ADS-B Exchange)
+# - "local": Use a local ADS-B receiver (e.g., dump1090 / tar1090)
+# - "external-adsbexchangelike": External ADS-B provider that accepts a center point + radius
+#     (this preserves the existing ADS-B Exchange / RapidAPI style integration)
+# - "external-opensky": OpenSky REST API which requires a bounding box (lamin/lomin/lamax/lomax)
+#     and uses OAuth2 client credentials (see opensky_credentials_path below)
+#
+# NOTE: If you migrate from the old "external" value, change it to either
+# "external-adsbexchangelike" (ADS-B Exchange style) or "external-opensky" (OpenSky).
 source_type = "local"
 
 # Local source configuration (used when source_type = "local")
@@ -45,7 +51,7 @@ local_source_url = "http://192.168.1.166/tar1090/data/aircraft.json"
 # URL template with format placeholders for latitude, longitude, and distance
 external_source_url = "https://adsbexchange-com1.p.rapidapi.com/v2/lat/%f/lon/%f/dist/%.0f/"
 
-# API authentication for external source
+# API authentication for external source, if it doesn't use it (like adsb.lol), leave both empty
 api_host = "adsbexchange-com1.p.rapidapi.com"
 api_key = ""  # Replace with your actual API key
 
@@ -329,6 +335,24 @@ refresh_interval_minutes = 10
 
 # API endpoints and settings
 api_base_url = "https://aviationweather.gov/api/data"
+request_timeout_seconds = 10
+max_retries = 2
+
+# Enable/disable specific weather data types
+fetch_metar = true
+fetch_taf = true
+fetch_notams = true
+notams_api_base_url = "https://node.windy.com/airports/notams"
+
+# Cache settings
+cache_expiry_minutes = 60  # How long to keep cached data if refresh fails
+
+# Global Forecast System (GFS) Configuration
+# Provides 3D wind and temperature data for accurate aircraft performance calculations.
+[wx.gfs]
+enabled = true
+base_url = "https://api.open-meteo.com/v1/gfs" # Open-Meteo GFS API endpoint
+refresh_interval_minutes = 60 # Update the 3D grid once per hour
 
 # OpenAI configuration (optional)
 # - Use this to override the OpenAI/API proxy base URL and specific endpoint paths used by the app.
@@ -356,24 +380,6 @@ transcription_session_path = "/v1/realtime/transcription_sessions"
 
 # Path used for chat completions / conversational responses
 chat_completions_path = "/v1/chat/completions"
-request_timeout_seconds = 10
-max_retries = 2
-
-# Enable/disable specific weather data types
-fetch_metar = true
-fetch_taf = true
-fetch_notams = true
-notams_api_base_url = "https://node.windy.com/airports/notams"
-
-# Cache settings
-cache_expiry_minutes = 60  # How long to keep cached data if refresh fails
-
-# Global Forecast System (GFS) Configuration
-# Provides 3D wind and temperature data for accurate aircraft performance calculations.
-[wx.gfs]
-enabled = true
-base_url = "https://api.open-meteo.com/v1/gfs" # Open-Meteo GFS API endpoint
-refresh_interval_minutes = 60 # Update the 3D grid once per hour
 
 #######################################################
 # ATC Chat Configuration
