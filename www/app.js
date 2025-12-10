@@ -708,9 +708,9 @@ document.addEventListener('alpine:init', () => {
                     ['Latitude', adsbData.lat?.toFixed(6) || 'N/A'],
                     ['Longitude', adsbData.lon?.toFixed(6) || 'N/A'],
                     ['Distance (NM)', aircraft.distance || 'N/A'],
-                    ['Altitude (Baro)', `${adsbData.alt_baro ?? 'N/A'} ft`],
-                    ['Altitude (Geom)', `${adsbData.alt_geom ?? 'N/A'} ft`],
-                    ['Vertical Rate', `${adsbData.baro_rate ?? 0} ft/min`]
+                    ['Altitude (Baro)', `${adsbData.alt_baro != null ? adsbData.alt_baro.toFixed(2) : 'N/A'} ft`],
+                    ['Altitude (Geom)', `${adsbData.alt_geom != null ? adsbData.alt_geom.toFixed(2) : 'N/A'} ft`],
+                    ['Vertical Rate', `${adsbData.baro_rate != null ? adsbData.baro_rate.toFixed(2) : '0'} ft/min`]
                 ]],
                 ['Speed & Direction', [
                     ['Ground Speed', `${adsbData.gs != null ? adsbData.gs.toFixed(2) : 'N/A'} kts`],
@@ -723,8 +723,8 @@ document.addEventListener('alpine:init', () => {
                 ]],
                 ['Navigation', [
                     ['Nav QNH', `${adsbData.nav_qnh ?? 'N/A'} hPa`],
-                    ['Nav Altitude MCP', `${adsbData.nav_altitude_mcp ?? 'N/A'} ft`],
-                    ['Nav Altitude FMS', `${adsbData.nav_altitude_fms ?? 'N/A'} ft`],
+                    ['Nav Altitude MCP', `${adsbData.nav_altitude_mcp != null ? adsbData.nav_altitude_mcp.toFixed(2) : 'N/A'} ft`],
+                    ['Nav Altitude FMS', `${adsbData.nav_altitude_fms != null ? adsbData.nav_altitude_fms.toFixed(2) : 'N/A'} ft`],
                     ['Nav Heading', `${adsbData.nav_heading != null ? adsbData.nav_heading.toFixed(2) : 'N/A'}°`]
                 ]],
                 ['Weather', [

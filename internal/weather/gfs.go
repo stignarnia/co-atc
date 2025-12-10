@@ -24,17 +24,18 @@ type GFSClient struct {
 	mu   sync.RWMutex
 }
 
-// GFSGrid represents a 3D weather grid
+// GFSGrid represents a 4D weather grid (Time, Level, Lat, Lon)
 type GFSGrid struct {
-	Timestamp  time.Time
-	Latitudes  []float64 // Sorted latitudes
-	Longitudes []float64 // Sorted longitudes
-	Levels     []int     // Pressure levels in hPa (e.g., 1000, 950, ..., 150)
+	LastUpdated time.Time
+	Times       []time.Time // Sorted timestamps for the forecast
+	Latitudes   []float64   // Sorted latitudes
+	Longitudes  []float64   // Sorted longitudes
+	Levels      []int       // Pressure levels in hPa (e.g., 1000, 950, ..., 150)
 
-	// Data stored as [levelIndex][latIndex][lonIndex]
-	UWind [][][]float64 // U-component of wind (m/s)
-	VWind [][][]float64 // V-component of wind (m/s)
-	Temp  [][][]float64 // Temperature (Celsius)
+	// Data stored as [TimeIndex][LevelIndex][LatIndex][LonIndex]
+	UWind [][][][]float64 // U-component of wind (m/s)
+	VWind [][][][]float64 // V-component of wind (m/s)
+	Temp  [][][][]float64 // Temperature (Celsius)
 }
 
 // NewGFSClient creates a new GFS client
@@ -139,30 +140,65 @@ func (c *GFSClient) FetchRegionalGrid(centerLat, centerLon float64) error {
 	return nil
 }
 
-// parseGridResponse parses the array of results into the 3D GFSGrid
+// parseGridResponse parses the array of results into the 4D GFSGrid
 func (c *GFSClient) parseGridResponse(results []map[string]interface{}, lats, lons []float64, levels []int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	grid := &GFSGrid{
-		Timestamp:  time.Now(),
-		Latitudes:  lats,
-		Longitudes: lons,
-		Levels:     levels,
-		UWind:      make([][][]float64, len(levels)),
-		VWind:      make([][][]float64, len(levels)),
-		Temp:       make([][][]float64, len(levels)),
+	// Extract times from the first result (assuming they are consistent across all points)
+	var times []time.Time
+	if len(results) > 0 {
+		hourly, ok := results[0]["hourly"].(map[string]interface{})
+		if ok {
+			if timeStrs, ok := hourly["time"].([]interface{}); ok {
+				for _, t := range timeStrs {
+					if ts, ok := t.(string); ok {
+						// Open-Meteo format: "2023-12-09T14:00"
+						parsedTime, err := time.Parse("2006-01-02T15:04", ts)
+						if err == nil {
+							times = append(times, parsedTime)
+						}
+					}
+				}
+			}
+		}
 	}
 
-	// Initialize 3D arrays
-	for i := range levels {
-		grid.UWind[i] = make([][]float64, len(lats))
-		grid.VWind[i] = make([][]float64, len(lats))
-		grid.Temp[i] = make([][]float64, len(lats))
-		for j := range lats {
-			grid.UWind[i][j] = make([]float64, len(lons))
-			grid.VWind[i][j] = make([]float64, len(lons))
-			grid.Temp[i][j] = make([]float64, len(lons))
+	if len(times) == 0 {
+		c.logger.Error("Failed to parse forecast times from GFS response")
+		return
+	}
+
+	timeCount := len(times)
+	levelCount := len(levels)
+	latCount := len(lats)
+	lonCount := len(lons)
+
+	grid := &GFSGrid{
+		LastUpdated: time.Now(),
+		Times:       times,
+		Latitudes:   lats,
+		Longitudes:  lons,
+		Levels:      levels,
+		UWind:       make([][][][]float64, timeCount),
+		VWind:       make([][][][]float64, timeCount),
+		Temp:        make([][][][]float64, timeCount),
+	}
+
+	// Initialize 4D arrays
+	for t := 0; t < timeCount; t++ {
+		grid.UWind[t] = make([][][]float64, levelCount)
+		grid.VWind[t] = make([][][]float64, levelCount)
+		grid.Temp[t] = make([][][]float64, levelCount)
+		for l := 0; l < levelCount; l++ {
+			grid.UWind[t][l] = make([][]float64, latCount)
+			grid.VWind[t][l] = make([][]float64, latCount)
+			grid.Temp[t][l] = make([][]float64, latCount)
+			for lat := 0; lat < latCount; lat++ {
+				grid.UWind[t][l][lat] = make([]float64, lonCount)
+				grid.VWind[t][l][lat] = make([]float64, lonCount)
+				grid.Temp[t][l][lat] = make([]float64, lonCount)
+			}
 		}
 	}
 
@@ -170,31 +206,32 @@ func (c *GFSClient) parseGridResponse(results []map[string]interface{}, lats, lo
 	// (lat0, lon0), (lat0, lon1), (lat0, lon2) -> latIndex=0, lonIndex=0,1,2
 	// (lat1, lon0), ...
 	resultIdx := 0
-	timeIdx := 0 // Use first hour (current time approximation)
 
 	for latIdx, _ := range lats {
 		for lonIdx, _ := range lons {
 			data := results[resultIdx]
 			hourly, ok := data["hourly"].(map[string]interface{})
 			if ok {
-				for lvlIdx, lvl := range levels {
-					suffix := fmt.Sprintf("%dhPa", lvl)
+				for t := 0; t < timeCount; t++ {
+					for lvlIdx, lvl := range levels {
+						suffix := fmt.Sprintf("%dhPa", lvl)
 
-					// Parse and store values
-					ws := extractValue(hourly, "windspeed_"+suffix, timeIdx)
-					wd := extractValue(hourly, "winddirection_"+suffix, timeIdx)
-					temp := extractValue(hourly, "temperature_"+suffix, timeIdx)
+						// Parse and store values
+						ws := extractValue(hourly, "windspeed_"+suffix, t)
+						wd := extractValue(hourly, "winddirection_"+suffix, t)
+						temp := extractValue(hourly, "temperature_"+suffix, t)
 
-					// Convert Speed/Dir to U/V
-					// U = -ws * sin(wd * pi/180)
-					// V = -ws * cos(wd * pi/180)
-					rad := wd * math.Pi / 180.0
-					u := -ws * math.Sin(rad)
-					v := -ws * math.Cos(rad)
+						// Convert Speed/Dir to U/V
+						// U = -ws * sin(wd * pi/180)
+						// V = -ws * cos(wd * pi/180)
+						rad := wd * math.Pi / 180.0
+						u := -ws * math.Sin(rad)
+						v := -ws * math.Cos(rad)
 
-					grid.UWind[lvlIdx][latIdx][lonIdx] = u
-					grid.VWind[lvlIdx][latIdx][lonIdx] = v
-					grid.Temp[lvlIdx][latIdx][lonIdx] = temp
+						grid.UWind[t][lvlIdx][latIdx][lonIdx] = u
+						grid.VWind[t][lvlIdx][latIdx][lonIdx] = v
+						grid.Temp[t][lvlIdx][latIdx][lonIdx] = temp
+					}
 				}
 			}
 			resultIdx++
@@ -202,7 +239,13 @@ func (c *GFSClient) parseGridResponse(results []map[string]interface{}, lats, lo
 	}
 
 	c.grid = grid
-	c.logger.Info("GFS Data Updated", logger.Int("levels", len(levels)), logger.Int("lat_points", len(lats)), logger.Int("lon_points", len(lons)))
+	c.logger.Info("GFS Data Updated",
+		logger.Int("times", timeCount),
+		logger.Int("levels", levelCount),
+		logger.Int("lat_points", latCount),
+		logger.Int("lon_points", lonCount),
+		logger.String("time_range", fmt.Sprintf("%s to %s", times[0], times[len(times)-1])),
+	)
 }
 
 func extractValue(hourly map[string]interface{}, key string, idx int) float64 {
@@ -214,7 +257,7 @@ func extractValue(hourly map[string]interface{}, key string, idx int) float64 {
 	return 0.0 // Default or Error value
 }
 
-// GetConditions returns the interpolated wind and temperature for a given 3D position
+// GetConditions returns the interpolated wind and temperature for a given 3D position at the current time
 func (c *GFSClient) GetConditions(lat, lon, altFt float64) (u, v, temp float64, err error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -223,6 +266,83 @@ func (c *GFSClient) GetConditions(lat, lon, altFt float64) (u, v, temp float64, 
 		return 0, 0, 0, fmt.Errorf("no GFS data available")
 	}
 
+	// 1. Find Time Interpolation Factors
+	now := time.Now().UTC()
+	times := c.grid.Times
+	if len(times) == 0 {
+		return 0, 0, 0, fmt.Errorf("empty GFS time data")
+	}
+
+	// Find the time bracket [t1, t2] such that t1 <= now <= t2
+	idx1 := -1
+	idx2 := -1
+
+	// If now is before the first time, clamp to first time
+	if now.Before(times[0]) {
+		idx1, idx2 = 0, 0
+	} else if now.After(times[len(times)-1]) {
+		// If now is after the last time, clamp to last time
+		last := len(times) - 1
+		idx1, idx2 = last, last
+	} else {
+		// Linear scan to find bracket
+		for i := 0; i < len(times)-1; i++ {
+			if !now.Before(times[i]) && !now.After(times[i+1]) {
+				idx1 = i
+				idx2 = i + 1
+				break
+			}
+		}
+	}
+
+	// Fallback if binary search or logic missed (shouldn't happen given above checks)
+	if idx1 == -1 {
+		idx1 = 0
+		idx2 = 0
+	}
+
+	// Calculate time interpolation factor (alpha)
+	// alpha = (now - t1) / (t2 - t1)
+	alpha := 0.0
+	if idx1 != idx2 {
+		t1 := times[idx1]
+		t2 := times[idx2]
+		duration := t2.Sub(t1).Seconds()
+		if duration > 0 {
+			elapsed := now.Sub(t1).Seconds()
+			alpha = elapsed / duration
+		}
+	}
+
+	// 2. Spatially Interpolate for t1 and t2
+	u1, v1, temp1, err1 := c.getSpatialConditionsAtTime(idx1, lat, lon, altFt)
+	if err1 != nil {
+		return 0, 0, 0, err1
+	}
+
+	// Optimization: if we are exactly on a time step or clamped
+	if idx1 == idx2 || alpha == 0.0 {
+		return u1, v1, temp1, nil
+	}
+
+	u2, v2, temp2, err2 := c.getSpatialConditionsAtTime(idx2, lat, lon, altFt)
+	if err2 != nil {
+		return 0, 0, 0, err2
+	}
+
+	// 3. Temporal Interpolation
+	u = u1*(1-alpha) + u2*alpha
+	v = v1*(1-alpha) + v2*alpha
+	temp = temp1*(1-alpha) + temp2*alpha
+
+	// Debug log occasionally (optional, kept light)
+	// c.logger.Debug("Interpolated weather", logger.Float64("alpha", alpha), logger.String("t1", times[idx1].String()), logger.String("t2", times[idx2].String()))
+
+	return u, v, temp, nil
+}
+
+// getSpatialConditionsAtTime performs 3D spatial interpolation for a fixed time index
+func (c *GFSClient) getSpatialConditionsAtTime(timeIdx int, lat, lon, altFt float64) (u, v, temp float64, err error) {
 	// 1. Bilinear Interpolation at Bounding Pressure Levels
 	// Find pressure level bounds for the given altitude
 	targetPressure := physics.AltitudeToPressure(altFt)
@@ -250,7 +370,7 @@ func (c *GFSClient) GetConditions(lat, lon, altFt float64) (u, v, temp float64, 
 
 	// Helper to interpolate 2D grid at a specific level index
 	interpolateLevel := func(lvlIdx int) (u, v, t float64) {
-		return c.bilinearInterpolate(lvlIdx, lat, lon)
+		return c.bilinearInterpolate(timeIdx, lvlIdx, lat, lon)
 	}
 
 	u1, v1, t1 := interpolateLevel(lowerLvlIdx)
@@ -273,8 +393,8 @@ func (c *GFSClient) GetConditions(lat, lon, altFt float64) (u, v, temp float64, 
 	return u, v, temp, nil
 }
 
-// bilinearInterpolate performs 2D interpolation for a specific level
-func (c *GFSClient) bilinearInterpolate(lvlIdx int, lat, lon float64) (u, v, t float64) {
+// bilinearInterpolate performs 2D interpolation for a specific time and level
+func (c *GFSClient) bilinearInterpolate(timeIdx, lvlIdx int, lat, lon float64) (u, v, t float64) {
 	// Find bounding lat/lon indices
 	// Lats/Lons are sorted ascending
 
@@ -286,7 +406,7 @@ func (c *GFSClient) bilinearInterpolate(lvlIdx int, lat, lon float64) (u, v, t f
 
 	// Helper to get values
 	getVal := func(li, gi int) (float64, float64, float64) {
-		return c.grid.UWind[lvlIdx][li][gi], c.grid.VWind[lvlIdx][li][gi], c.grid.Temp[lvlIdx][li][gi]
+		return c.grid.UWind[timeIdx][lvlIdx][li][gi], c.grid.VWind[timeIdx][lvlIdx][li][gi], c.grid.Temp[timeIdx][lvlIdx][li][gi]
 	}
 
 	u11, v11, t11 := getVal(latIdx1, lonIdx1)
