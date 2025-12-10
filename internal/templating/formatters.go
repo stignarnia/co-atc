@@ -280,30 +280,22 @@ func FormatWeatherData(weather *weather.WeatherData) string {
 	var builder strings.Builder
 
 	// Extract latest METAR - only show decoded, not raw
+	// Extract latest METAR
 	if weather.METAR != nil {
-		if metarMap, ok := weather.METAR.(map[string]interface{}); ok {
-			if trend, exists := metarMap["trend"]; exists {
-				if trendSlice, ok := trend.([]interface{}); ok && len(trendSlice) > 0 {
-					// Get the latest METAR (first in trend array)
-					if latestMetar, ok := trendSlice[0].(map[string]interface{}); ok {
-						if txt, exists := latestMetar["txt"]; exists {
-							if txtSlice, ok := txt.([]interface{}); ok && len(txtSlice) > 0 {
-								builder.WriteString(fmt.Sprintf("Current Weather: %v\n", txtSlice[0]))
-							}
-						}
-					}
-				}
-			}
+		// Use the raw observation text directly from the typed struct
+		builder.WriteString(fmt.Sprintf("Current Weather: %s\n", weather.METAR.RawOb))
+
+		// Optional: Add specific details if readable
+		if weather.METAR.Temp != 0 || weather.METAR.Wspd != 0 {
+			builder.WriteString(fmt.Sprintf("Details: Temp %.1f°C, Wind %v@%v\n",
+				weather.METAR.Temp, weather.METAR.Wdir, weather.METAR.Wspd))
 		}
 	}
 
-	// TAF summary (keep this but simplified)
+	// TAF summary
 	if weather.TAF != nil {
-		if tafMap, ok := weather.TAF.(map[string]interface{}); ok {
-			if _, exists := tafMap["decoded"]; exists {
-				builder.WriteString("TAF Summary: Terminal forecast available\n")
-			}
-		}
+		// Use the raw TAF text directly from the typed struct
+		builder.WriteString(fmt.Sprintf("TAF: %s\n", weather.TAF.RawTAF))
 	}
 
 	// Last updated

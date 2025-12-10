@@ -3880,12 +3880,7 @@ document.addEventListener('alpine:init', () => {
 
         // Get the latest METAR data
         getLatestMetar() {
-            if (!this.metar || !this.metar.trend || this.metar.trend.length === 0) {
-                return null;
-            }
-
-            // Return the first (latest) METAR in the trend array
-            return this.metar.trend[0];
+            return this.metar;
         },
 
         // Toggle METAR details visibility

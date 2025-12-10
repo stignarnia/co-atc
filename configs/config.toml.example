@@ -321,15 +321,14 @@ signal_lost_landing_max_alt_ft = 1000         # Max altitude for signal lost lan
 
 #######################################################
 # Weather Data Configuration
-#  - Windy asks: "Do not steal this API. Download your own METARs for free from https://www.aviationweather.gov/dataserver"
-#  - So, please don't use this.
+#  - Now officially using AviationWeather.gov API
 #######################################################
 [wx]
 # Weather data refresh interval in minutes
 refresh_interval_minutes = 10
 
 # API endpoints and settings
-api_base_url = "https://node.windy.com/airports"
+api_base_url = "https://aviationweather.gov/api/data"
 
 # OpenAI configuration (optional)
 # - Use this to override the OpenAI/API proxy base URL and specific endpoint paths used by the app.
@@ -364,6 +363,7 @@ max_retries = 2
 fetch_metar = true
 fetch_taf = true
 fetch_notams = true
+notams_api_base_url = "https://node.windy.com/airports/notams"
 
 # Cache settings
 cache_expiry_minutes = 60  # How long to keep cached data if refresh fails

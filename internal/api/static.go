@@ -29,9 +29,7 @@ func (h *StaticFileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := filepath.Clean(r.URL.Path)
 
 	// Remove leading slash
-	if strings.HasPrefix(path, "/") {
-		path = path[1:]
-	}
+	path = strings.TrimPrefix(path, "/")
 
 	// If path is empty, serve index.html
 	if path == "" {

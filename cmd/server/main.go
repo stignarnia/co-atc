@@ -162,6 +162,7 @@ func main() {
 		FetchMETAR:             cfg.Weather.FetchMETAR,
 		FetchTAF:               cfg.Weather.FetchTAF,
 		FetchNOTAMs:            cfg.Weather.FetchNOTAMs,
+		NOTAMsBaseURL:          cfg.Weather.NOTAMsBaseURL,
 		CacheExpiryMinutes:     cfg.Weather.CacheExpiryMinutes,
 		GFS: weather.GFSConfig{
 			Enabled:                cfg.Weather.GFS.Enabled,

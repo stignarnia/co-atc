@@ -837,6 +837,7 @@ type WeatherConfig struct {
 	FetchMETAR             bool      `toml:"fetch_metar"`              // Whether to fetch METAR data
 	FetchTAF               bool      `toml:"fetch_taf"`                // Whether to fetch TAF data
 	FetchNOTAMs            bool      `toml:"fetch_notams"`             // Whether to fetch NOTAM data
+	NOTAMsBaseURL          string    `toml:"notams_api_base_url"`      // Base URL for NOTAMs API
 	CacheExpiryMinutes     int       `toml:"cache_expiry_minutes"`     // How long to keep cached data if refresh fails
 	GFS                    GFSConfig `toml:"gfs"`                      // NOAA GFS grid data configuration
 }

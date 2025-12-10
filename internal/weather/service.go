@@ -3,6 +3,7 @@ package weather
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -118,10 +119,69 @@ func (s *Service) Stop() error {
 
 // GetConditions returns the interpolated weather conditions (U, V, Temp) for a specific 3D point
 func (s *Service) GetConditions(lat, lon, altFt float64) (u, v, temp float64, err error) {
-	if !s.config.GFS.Enabled {
-		return 0, 0, 0, fmt.Errorf("GFS disabled")
+	// 1. Get Base GFS Prediction
+	// If GFS is disabled, return 0s (or maybe we should just return METAR if available? For now keeping existing logic)
+	// But wait, existing logic returns error if GFS disabled. Let's keep it consistent but allow METAR fallback if GFS fails?
+	// The prompt said "hybrid", implying both.
+
+	u, v, temp, err = s.gfsClient.GetConditions(lat, lon, altFt)
+	if err != nil {
+		// If GFS fails, we could potentially just return METAR data if at surface, but let's stick to the plan:
+		// GFS is the primary source for upper air.
+		// If GFS is disabled in config, we return error.
+		if !s.config.GFS.Enabled {
+			return 0, 0, 0, fmt.Errorf("GFS disabled")
+		}
+		return 0, 0, 0, err
 	}
-	return s.gfsClient.GetConditions(lat, lon, altFt)
+
+	// 2. Hybrid Blending with METAR (Low Altitude Only)
+	const MetarTransitionAlt = 3000.0
+
+	// If higher than transition, return pure GFS
+	if altFt >= MetarTransitionAlt {
+		return u, v, temp, nil
+	}
+
+	weatherData := s.cache.Get()
+	if weatherData == nil || weatherData.METAR == nil {
+		return u, v, temp, nil
+	}
+
+	// Use AviationWeather METAR (Direct access)
+	latest := weatherData.METAR
+
+	// Wind Speed: Knots -> m/s
+	metarSpeedMs := latest.Wspd * 0.514444
+
+	// Direction: Degrees -> Radians
+	dirRad := latest.Wdir * math.Pi / 180.0
+
+	// Convert METAR Wind to U/V
+	// U = -ws * sin(dir)
+	// V = -ws * cos(dir)
+	metarU := -metarSpeedMs * math.Sin(dirRad)
+	metarV := -metarSpeedMs * math.Cos(dirRad)
+
+	// METAR Temp (Direct access)
+	metarTemp := latest.Temp
+
+	// 3. Calculate Weighting
+	gfsFactor := altFt / MetarTransitionAlt
+	if gfsFactor < 0 {
+		gfsFactor = 0
+	}
+	if gfsFactor > 1 {
+		gfsFactor = 1
+	}
+	metarFactor := 1.0 - gfsFactor
+
+	// 4. Blend
+	finalU := u*gfsFactor + metarU*metarFactor
+	finalV := v*gfsFactor + metarV*metarFactor
+	finalTemp := temp*gfsFactor + metarTemp*metarFactor
+
+	return finalU, finalV, finalTemp, nil
 }
 
 // gfsRefreshLoop runs the periodic GFS data refresh

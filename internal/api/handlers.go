@@ -257,11 +257,8 @@ func (h *Handler) GetAllAircraft(w http.ResponseWriter, r *http.Request) {
 		aircraft = filtered
 	}
 
-	// Update zero values with last non-zero values from position history
+	// Calculate derived data for each aircraft
 	for _, a := range aircraft {
-		updateZeroValuesFromHistory(a)
-
-		// Calculate distance from station for each aircraft
 		if a.ADSB != nil && a.ADSB.Lat != 0 && a.ADSB.Lon != 0 {
 			distMeters := adsb.Haversine(a.ADSB.Lat, a.ADSB.Lon, h.config.Station.Latitude, h.config.Station.Longitude)
 			distNM := adsb.MetersToNM(distMeters)
@@ -359,9 +356,6 @@ func (h *Handler) GetAircraftByHex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Aircraft not found", http.StatusNotFound)
 		return
 	}
-
-	// Update zero values with last non-zero values from position history
-	updateZeroValuesFromHistory(aircraft)
 
 	// Calculate distance from station
 	if aircraft.ADSB != nil && aircraft.ADSB.Lat != 0 && aircraft.ADSB.Lon != 0 {
@@ -797,246 +791,6 @@ func calculateDestinationPoint(lat, lon, bearing, distanceNM float64) (float64, 
 	return lat2, lon2
 }
 
-// fetchMetarData fetches METAR data from the Windy API with retry logic
-func (h *Handler) fetchMetarData(airportCode string) (interface{}, error) {
-	url := fmt.Sprintf("https://node.windy.com/airports/metar/%s", airportCode)
-
-	// Create a new HTTP client with increased timeout
-	client := &http.Client{
-		Timeout: 10 * time.Second, // Increased from 5 to 10 seconds
-	}
-
-	// Retry configuration
-	maxRetries := 2
-	var lastErr error
-	var metarData interface{}
-
-	// Try to fetch with retries
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			// Exponential backoff between retries
-			backoffDuration := time.Duration(500*(1<<uint(attempt-1))) * time.Millisecond
-			h.logger.Info("Retrying METAR data fetch",
-				logger.String("airport", airportCode),
-				logger.Int("attempt", attempt),
-				logger.String("backoff", backoffDuration.String()))
-			time.Sleep(backoffDuration)
-		}
-
-		// Make the request
-		resp, err := client.Get(url)
-		if err != nil {
-			lastErr = fmt.Errorf("error making request to Windy API: %w", err)
-			h.logger.Warn("METAR API request failed, may retry",
-				logger.String("airport", airportCode),
-				logger.Error(err),
-				logger.Int("attempt", attempt+1),
-				logger.Int("max_attempts", maxRetries+1))
-			continue
-		}
-
-		// Ensure response body is closed
-		defer resp.Body.Close()
-
-		// Check response status
-		if resp.StatusCode != http.StatusOK {
-			lastErr = fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-			h.logger.Warn("METAR API returned non-OK status, may retry",
-				logger.String("airport", airportCode),
-				logger.Int("status_code", resp.StatusCode),
-				logger.Int("attempt", attempt+1),
-				logger.Int("max_attempts", maxRetries+1))
-			continue
-		}
-
-		// Read and parse the response
-		if err := json.NewDecoder(resp.Body).Decode(&metarData); err != nil {
-			lastErr = fmt.Errorf("error decoding METAR data: %w", err)
-			h.logger.Warn("Failed to decode METAR data, may retry",
-				logger.String("airport", airportCode),
-				logger.Error(err),
-				logger.Int("attempt", attempt+1),
-				logger.Int("max_attempts", maxRetries+1))
-			continue
-		}
-
-		// Success - return the data
-		if attempt > 0 {
-			h.logger.Info("Successfully fetched METAR data after retries",
-				logger.String("airport", airportCode),
-				logger.Int("attempts_needed", attempt+1))
-		}
-		return metarData, nil
-	}
-
-	// If we get here, all attempts failed
-	h.logger.Error("All attempts to fetch METAR data failed",
-		logger.String("airport", airportCode),
-		logger.Error(lastErr),
-		logger.Int("max_attempts", maxRetries+1))
-	return nil, lastErr
-}
-
-// fetchTAFData fetches TAF data from the Windy API with retry logic
-func (h *Handler) fetchTAFData(airportCode string) (interface{}, error) {
-	url := fmt.Sprintf("https://node.windy.com/airports/taf/%s", airportCode)
-
-	// Create a new HTTP client with increased timeout
-	client := &http.Client{
-		Timeout: 10 * time.Second, // Increased from 5 to 10 seconds
-	}
-
-	// Retry configuration
-	maxRetries := 2
-	var lastErr error
-	var tafData interface{}
-
-	// Try to fetch with retries
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			// Exponential backoff between retries
-			backoffDuration := time.Duration(500*(1<<uint(attempt-1))) * time.Millisecond
-			h.logger.Info("Retrying TAF data fetch",
-				logger.String("airport", airportCode),
-				logger.Int("attempt", attempt),
-				logger.String("backoff", backoffDuration.String()))
-			time.Sleep(backoffDuration)
-		}
-
-		// Make the request
-		resp, err := client.Get(url)
-		if err != nil {
-			lastErr = fmt.Errorf("error making request to Windy API: %w", err)
-			h.logger.Warn("TAF API request failed, may retry",
-				logger.String("airport", airportCode),
-				logger.Error(err),
-				logger.Int("attempt", attempt+1),
-				logger.Int("max_attempts", maxRetries+1))
-			continue
-		}
-
-		// Ensure response body is closed
-		defer resp.Body.Close()
-
-		// Check response status
-		if resp.StatusCode != http.StatusOK {
-			lastErr = fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-			h.logger.Warn("TAF API returned non-OK status, may retry",
-				logger.String("airport", airportCode),
-				logger.Int("status_code", resp.StatusCode),
-				logger.Int("attempt", attempt+1),
-				logger.Int("max_attempts", maxRetries+1))
-			continue
-		}
-
-		// Read and parse the response
-		if err := json.NewDecoder(resp.Body).Decode(&tafData); err != nil {
-			lastErr = fmt.Errorf("error decoding TAF data: %w", err)
-			h.logger.Warn("Failed to decode TAF data, may retry",
-				logger.String("airport", airportCode),
-				logger.Error(err),
-				logger.Int("attempt", attempt+1),
-				logger.Int("max_attempts", maxRetries+1))
-			continue
-		}
-
-		// Success - return the data
-		if attempt > 0 {
-			h.logger.Info("Successfully fetched TAF data after retries",
-				logger.String("airport", airportCode),
-				logger.Int("attempts_needed", attempt+1))
-		}
-		return tafData, nil
-	}
-
-	// If we get here, all attempts failed
-	h.logger.Error("All attempts to fetch TAF data failed",
-		logger.String("airport", airportCode),
-		logger.Error(lastErr),
-		logger.Int("max_attempts", maxRetries+1))
-	return nil, lastErr
-}
-
-// fetchNOTAMData fetches NOTAM data from the Windy API with retry logic
-func (h *Handler) fetchNOTAMData(airportCode string) (interface{}, error) {
-	url := fmt.Sprintf("https://node.windy.com/airports/notams/%s", airportCode)
-
-	// Create a new HTTP client with increased timeout
-	client := &http.Client{
-		Timeout: 10 * time.Second, // Increased from 5 to 10 seconds
-	}
-
-	// Retry configuration
-	maxRetries := 2
-	var lastErr error
-	var notamData interface{}
-
-	// Try to fetch with retries
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			// Exponential backoff between retries
-			backoffDuration := time.Duration(500*(1<<uint(attempt-1))) * time.Millisecond
-			h.logger.Info("Retrying NOTAM data fetch",
-				logger.String("airport", airportCode),
-				logger.Int("attempt", attempt),
-				logger.String("backoff", backoffDuration.String()))
-			time.Sleep(backoffDuration)
-		}
-
-		// Make the request
-		resp, err := client.Get(url)
-		if err != nil {
-			lastErr = fmt.Errorf("error making request to Windy API: %w", err)
-			h.logger.Warn("NOTAM API request failed, may retry",
-				logger.String("airport", airportCode),
-				logger.Error(err),
-				logger.Int("attempt", attempt+1),
-				logger.Int("max_attempts", maxRetries+1))
-			continue
-		}
-
-		// Ensure response body is closed
-		defer resp.Body.Close()
-
-		// Check response status
-		if resp.StatusCode != http.StatusOK {
-			lastErr = fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-			h.logger.Warn("NOTAM API returned non-OK status, may retry",
-				logger.String("airport", airportCode),
-				logger.Int("status_code", resp.StatusCode),
-				logger.Int("attempt", attempt+1),
-				logger.Int("max_attempts", maxRetries+1))
-			continue
-		}
-
-		// Read and parse the response
-		if err := json.NewDecoder(resp.Body).Decode(&notamData); err != nil {
-			lastErr = fmt.Errorf("error decoding NOTAM data: %w", err)
-			h.logger.Warn("Failed to decode NOTAM data, may retry",
-				logger.String("airport", airportCode),
-				logger.Error(err),
-				logger.Int("attempt", attempt+1),
-				logger.Int("max_attempts", maxRetries+1))
-			continue
-		}
-
-		// Success - return the data
-		if attempt > 0 {
-			h.logger.Info("Successfully fetched NOTAM data after retries",
-				logger.String("airport", airportCode),
-				logger.Int("attempts_needed", attempt+1))
-		}
-		return notamData, nil
-	}
-
-	// If we get here, all attempts failed
-	h.logger.Error("All attempts to fetch NOTAM data failed",
-		logger.String("airport", airportCode),
-		logger.Error(lastErr),
-		logger.Int("max_attempts", maxRetries+1))
-	return nil, lastErr
-}
-
 // GetAllFrequencies returns all frequencies
 func (h *Handler) GetAllFrequencies(w http.ResponseWriter, r *http.Request) {
 	// Get all frequencies
@@ -1419,13 +1173,6 @@ func WriteJSON(w http.ResponseWriter, status int, data interface{}) {
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-}
-
-// updateZeroValuesFromHistory updates zero values in the aircraft with the last non-zero values from position history
-func updateZeroValuesFromHistory(aircraft *adsb.Aircraft) {
-	// This function is no longer needed since we're using ADSB data directly
-	// We keep it as a no-op for backward compatibility
-	return
 }
 
 // haversine is a wrapper around adsb.Haversine for backward compatibility

@@ -95,9 +95,14 @@ func (c *Cache) Update(results []FetchResult, airportCode string) {
 					logger.String("airport", airportCode),
 					logger.Error(result.Err))
 			} else {
-				newData.METAR = result.Data
-				c.logger.Debug("METAR data updated",
-					logger.String("airport", airportCode))
+				if metarData, ok := result.Data.(*METARResponse); ok {
+					newData.METAR = metarData
+					c.logger.Debug("METAR data updated",
+						logger.String("airport", airportCode))
+				} else {
+					c.logger.Error("Failed to cast METAR data to *METARResponse",
+						logger.String("airport", airportCode))
+				}
 			}
 
 		case WeatherTypeTAF:
@@ -107,9 +112,14 @@ func (c *Cache) Update(results []FetchResult, airportCode string) {
 					logger.String("airport", airportCode),
 					logger.Error(result.Err))
 			} else {
-				newData.TAF = result.Data
-				c.logger.Debug("TAF data updated",
-					logger.String("airport", airportCode))
+				if tafData, ok := result.Data.(*TAFResponse); ok {
+					newData.TAF = tafData
+					c.logger.Debug("TAF data updated",
+						logger.String("airport", airportCode))
+				} else {
+					c.logger.Error("Failed to cast TAF data to *TAFResponse",
+						logger.String("airport", airportCode))
+				}
 			}
 
 		case WeatherTypeNOTAMs:

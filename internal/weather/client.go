@@ -29,26 +29,50 @@ func NewClient(config WeatherConfig, logger *logger.Logger) *Client {
 
 // FetchMETAR fetches METAR data for the specified airport
 func (c *Client) FetchMETAR(airportCode string) (interface{}, error) {
-	url := fmt.Sprintf("%s/metar/%s", c.config.APIBaseURL, airportCode)
-	return c.fetchWithRetry(url, WeatherTypeMETAR, airportCode)
+	// New API: AviationWeather.gov
+	url := fmt.Sprintf("%s/metar?ids=%s&format=json", c.config.APIBaseURL, airportCode)
+
+	var result []METARResponse // API returns an array
+	err := c.fetchWithRetry(url, WeatherTypeMETAR, airportCode, &result)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(result) == 0 {
+		return nil, fmt.Errorf("no METAR data found for %s", airportCode)
+	}
+
+	// Return the first (latest) observation
+	return &result[0], nil
 }
 
 // FetchTAF fetches TAF data for the specified airport
 func (c *Client) FetchTAF(airportCode string) (interface{}, error) {
-	url := fmt.Sprintf("%s/taf/%s", c.config.APIBaseURL, airportCode)
-	return c.fetchWithRetry(url, WeatherTypeTAF, airportCode)
+	// Use config base URL and AviationWeather query format
+	url := fmt.Sprintf("%s/taf?ids=%s&format=json", c.config.APIBaseURL, airportCode)
+	var result []TAFResponse
+	err := c.fetchWithRetry(url, WeatherTypeTAF, airportCode, &result)
+	if err != nil {
+		return nil, err
+	}
+	if len(result) == 0 {
+		return nil, fmt.Errorf("no TAF data found for %s", airportCode)
+	}
+	return &result[0], nil
 }
 
 // FetchNOTAMs fetches NOTAM data for the specified airport
 func (c *Client) FetchNOTAMs(airportCode string) (interface{}, error) {
-	url := fmt.Sprintf("%s/notams/%s", c.config.APIBaseURL, airportCode)
-	return c.fetchWithRetry(url, WeatherTypeNOTAMs, airportCode)
+	// Use configured API for NOTAMs (default: Windy)
+	url := fmt.Sprintf("%s/%s", c.config.NOTAMsBaseURL, airportCode)
+	var data interface{}
+	err := c.fetchWithRetry(url, WeatherTypeNOTAMs, airportCode, &data)
+	return data, err
 }
 
 // fetchWithRetry performs HTTP request with retry logic and exponential backoff
-func (c *Client) fetchWithRetry(url string, weatherType WeatherType, airportCode string) (interface{}, error) {
+func (c *Client) fetchWithRetry(url string, weatherType WeatherType, airportCode string, target interface{}) error {
 	var lastErr error
-	var data interface{}
 
 	// Try to fetch with retries
 	for attempt := 0; attempt <= c.config.MaxRetries; attempt++ {
@@ -91,8 +115,8 @@ func (c *Client) fetchWithRetry(url string, weatherType WeatherType, airportCode
 			continue
 		}
 
-		// Read and parse the response
-		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		// Read and parse the response directly into the target
+		if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
 			lastErr = fmt.Errorf("error decoding weather data: %w", err)
 			c.logger.Warn("Failed to decode weather data, may retry",
 				logger.String("type", string(weatherType)),
@@ -103,14 +127,14 @@ func (c *Client) fetchWithRetry(url string, weatherType WeatherType, airportCode
 			continue
 		}
 
-		// Success - return the data
+		// Success
 		if attempt > 0 {
 			c.logger.Info("Successfully fetched weather data after retries",
 				logger.String("type", string(weatherType)),
 				logger.String("airport", airportCode),
 				logger.Int("attempts_needed", attempt+1))
 		}
-		return data, nil
+		return nil
 	}
 
 	// If we get here, all attempts failed
@@ -119,7 +143,7 @@ func (c *Client) fetchWithRetry(url string, weatherType WeatherType, airportCode
 		logger.String("airport", airportCode),
 		logger.Error(lastErr),
 		logger.Int("max_attempts", c.config.MaxRetries+1))
-	return nil, lastErr
+	return lastErr
 }
 
 // FetchAll fetches all enabled weather data types concurrently

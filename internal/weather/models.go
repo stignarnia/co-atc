@@ -7,11 +7,11 @@ import (
 
 // WeatherData represents the complete weather information for an airport
 type WeatherData struct {
-	METAR       interface{} `json:"metar,omitempty"`
-	TAF         interface{} `json:"taf,omitempty"`
-	NOTAMs      interface{} `json:"notams,omitempty"`
-	LastUpdated time.Time   `json:"last_updated"`
-	FetchErrors []string    `json:"fetch_errors,omitempty"`
+	METAR       *METARResponse `json:"metar,omitempty"`
+	TAF         *TAFResponse   `json:"taf,omitempty"`
+	NOTAMs      interface{}    `json:"notams,omitempty"`
+	LastUpdated time.Time      `json:"last_updated"`
+	FetchErrors []string       `json:"fetch_errors,omitempty"`
 }
 
 // WeatherCache represents cached weather data with expiration
@@ -30,6 +30,7 @@ type WeatherConfig struct {
 	FetchMETAR             bool      `toml:"fetch_metar"`
 	FetchTAF               bool      `toml:"fetch_taf"`
 	FetchNOTAMs            bool      `toml:"fetch_notams"`
+	NOTAMsBaseURL          string    `toml:"notams_api_base_url"`
 	CacheExpiryMinutes     int       `toml:"cache_expiry_minutes"`
 	GFS                    GFSConfig `toml:"gfs"`
 }
@@ -91,12 +92,13 @@ func NewWeatherCache() *WeatherCache {
 func DefaultWeatherConfig() WeatherConfig {
 	return WeatherConfig{
 		RefreshIntervalMinutes: 10,
-		APIBaseURL:             "https://node.windy.com/airports",
+		APIBaseURL:             "https://aviationweather.gov/api/data",
 		RequestTimeoutSeconds:  10,
 		MaxRetries:             2,
 		FetchMETAR:             true,
 		FetchTAF:               true,
 		FetchNOTAMs:            true,
+		NOTAMsBaseURL:          "https://node.windy.com/airports/notams",
 		CacheExpiryMinutes:     15,
 	}
 }
@@ -111,6 +113,7 @@ type ConfigWeatherConfig struct {
 	FetchMETAR             bool      `toml:"fetch_metar"`
 	FetchTAF               bool      `toml:"fetch_taf"`
 	FetchNOTAMs            bool      `toml:"fetch_notams"`
+	NOTAMsBaseURL          string    `toml:"notams_api_base_url"`
 	CacheExpiryMinutes     int       `toml:"cache_expiry_minutes"`
 	GFS                    GFSConfig `toml:"gfs"`
 }
@@ -125,6 +128,7 @@ func FromConfigWeatherConfig(cfg ConfigWeatherConfig) WeatherConfig {
 		FetchMETAR:             cfg.FetchMETAR,
 		FetchTAF:               cfg.FetchTAF,
 		FetchNOTAMs:            cfg.FetchNOTAMs,
+		NOTAMsBaseURL:          cfg.NOTAMsBaseURL,
 		CacheExpiryMinutes:     cfg.CacheExpiryMinutes,
 		GFS:                    cfg.GFS,
 	}
