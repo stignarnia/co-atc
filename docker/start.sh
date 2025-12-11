@@ -47,7 +47,7 @@ echo "✅ Assets directory and required files found"
 # Check if config file exists
 if [ ! -f "config.toml" ]; then
     echo "🔧 Creating configuration file from example..."
-    cp ../configs/config.toml.example config.toml
+    cp ../configs/config.example.toml config.toml
     echo "✅ Configuration file created: config.toml"
     echo ""
     echo "⚠️  IMPORTANT: Please edit config.toml with your settings:"

@@ -38,7 +38,7 @@ Co-ATC is an AI-enhanced aircraft monitoring system that provides:
 1. **Create configuration file:**
    ```bash
    cd docker
-   cp ../configs/config.toml.example config.toml
+   cp ../configs/config.example.toml config.toml
    ```
 
 2. **Edit configuration file:**
@@ -63,7 +63,7 @@ Co-ATC is an AI-enhanced aircraft monitoring system that provides:
 
 ## Configuration
 
-The configuration file is created from `/configs/config.toml.example`. You must customize the following settings for your environment:
+The configuration file is created from `/configs/config.example.toml`. You must customize the following settings for your environment:
 
 ### Required Settings
 
