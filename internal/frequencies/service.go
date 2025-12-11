@@ -11,6 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yegors/co-atc/internal/ai"
+	"github.com/yegors/co-atc/internal/ai/gemini"
+	"github.com/yegors/co-atc/internal/ai/openai"
 	"github.com/yegors/co-atc/internal/audio"
 	cfg "github.com/yegors/co-atc/internal/config"
 	"github.com/yegors/co-atc/internal/storage/sqlite"
@@ -75,6 +78,7 @@ func NewStreamProcessor(
 		logger.Named("audio"),
 	)
 	if err != nil {
+		procCancel()
 		return nil, fmt.Errorf("failed to create audio processor: %w", err)
 	}
 
@@ -482,7 +486,7 @@ func NewService(
 	clearanceStorage *sqlite.ClearanceStorage,
 	templateRenderer transcription.TemplateRenderer,
 ) *Service {
-	// EXPERIMENT: Reduce buffer size to see impact on perceived lag from "live"
+	// Buffer size configuration
 	bufferSize := 4 * 1024 // 4KB buffer, approx 2 seconds at 16kbps
 	if config.Frequencies.BufferSizeKB > 0 {
 		bufferSize = config.Frequencies.BufferSizeKB * 1024
@@ -498,7 +502,6 @@ func NewService(
 
 	// Create transcription manager
 	transcriptionConfig := transcription.Config{
-		OpenAIAPIKey:          config.Transcription.OpenAIAPIKey,
 		Model:                 config.Transcription.Model,
 		Language:              config.Transcription.Language,
 		NoiseReduction:        config.Transcription.NoiseReduction,
@@ -519,30 +522,6 @@ func NewService(
 		RetryMaxBackoffMs:     config.Transcription.RetryMaxBackoffMs,
 		PromptPath:            config.Transcription.PromptPath,
 		TimeoutSeconds:        config.Transcription.TimeoutSeconds,
-		// Per-service OpenAI base URL override (optional). If empty, we'll fall back to top-level [openai].base_url below.
-		OpenAIBaseURL: config.Transcription.OpenAIBaseURL,
-		// Path fields will be populated from top-level [openai] config below (allowing a single place to override endpoints)
-		RealtimeSessionPath:      config.OpenAI.RealtimeSessionPath,
-		RealtimeWebsocketPath:    config.OpenAI.RealtimeWebsocketPath,
-		TranscriptionSessionPath: config.OpenAI.TranscriptionSessionPath,
-		ChatCompletionsPath:      config.OpenAI.ChatCompletionsPath,
-	}
-	// If per-service base URL was not set, use the top-level OpenAI base URL
-	if transcriptionConfig.OpenAIBaseURL == "" {
-		transcriptionConfig.OpenAIBaseURL = config.OpenAI.BaseURL
-	}
-	// Ensure path defaults are present if top-level did not provide them
-	if transcriptionConfig.RealtimeSessionPath == "" {
-		transcriptionConfig.RealtimeSessionPath = config.OpenAI.RealtimeSessionPath
-	}
-	if transcriptionConfig.RealtimeWebsocketPath == "" {
-		transcriptionConfig.RealtimeWebsocketPath = config.OpenAI.RealtimeWebsocketPath
-	}
-	if transcriptionConfig.TranscriptionSessionPath == "" {
-		transcriptionConfig.TranscriptionSessionPath = config.OpenAI.TranscriptionSessionPath
-	}
-	if transcriptionConfig.ChatCompletionsPath == "" {
-		transcriptionConfig.ChatCompletionsPath = config.OpenAI.ChatCompletionsPath
 	}
 
 	// Load the prompt from file
@@ -559,8 +538,11 @@ func NewService(
 			Int("prompt_length", len(transcriptionConfig.Prompt)))
 	}
 
+	// Determine Post-Processing Provider
+	ppProvider, ppEnabled := config.GetPostProcessingProvider()
+
 	postProcessingConfig := transcription.PostProcessingConfig{
-		Enabled:               config.PostProcessing.Enabled,
+		Enabled:               ppEnabled,
 		Model:                 config.PostProcessing.Model,
 		IntervalSeconds:       config.PostProcessing.IntervalSeconds,
 		BatchSize:             config.PostProcessing.BatchSize,
@@ -578,13 +560,75 @@ func NewService(
 		})
 	}
 
+	// Initialize AI Clients
+	var openaiClient *openai.Client
+	var geminiClient *gemini.Client
+
+	if config.OpenAI.APIKey != "" {
+		// Create OpenAI client
+		openaiClient = openai.NewClient(
+			config.OpenAI.APIKey,
+			logger,
+			config.OpenAI.BaseURL,
+		)
+	}
+
+	if config.Gemini.APIKey != "" {
+		// Create Gemini client
+		geminiClient = gemini.NewClient(
+			config.Gemini.APIKey,
+			logger,
+		)
+	}
+
+	// Determine Transcription Provider
+	transcriptionProviderName, transcriptionEnabled := config.GetTranscriptionProvider()
+	var transcriptionProvider ai.TranscriptionProvider
+
+	if transcriptionEnabled {
+		switch transcriptionProviderName {
+		case "openai":
+			if openaiClient != nil {
+				transcriptionProvider = openaiClient
+				logger.Info("Using OpenAI for Transcription", String("model", config.Transcription.Model))
+			} else {
+				logger.Warn("OpenAI selected for transcription but client not initialized (missing API key?)")
+			}
+		case "gemini":
+			if geminiClient != nil {
+				transcriptionProvider = geminiClient
+				logger.Info("Using Gemini for Transcription", String("model", config.Transcription.Model))
+			} else {
+				logger.Warn("Gemini selected for transcription but client not initialized (missing API key?)")
+			}
+		}
+	}
+
+	// Determine Post-Processing Chat Provider
+	var chatProvider ai.ChatProvider
+	if ppEnabled {
+		switch ppProvider {
+		case "openai":
+			if openaiClient != nil {
+				chatProvider = openaiClient
+				logger.Info("Using OpenAI for Post-Processing", String("model", config.PostProcessing.Model))
+			}
+		case "gemini":
+			if geminiClient != nil {
+				chatProvider = geminiClient
+				logger.Info("Using Gemini for Post-Processing", String("model", config.PostProcessing.Model))
+			}
+		}
+	}
+
 	transcriptionManager := transcription.NewTranscriptionManager(
 		wsServer,
 		transcriptionStorage,
 		aircraftStorage,
 		clearanceStorage,
 		logger.Named("transcribe"),
-		config.Transcription.OpenAIAPIKey,
+		transcriptionProvider,
+		chatProvider,
 		transcriptionConfig,
 		postProcessingConfig,
 		templateRenderer,
@@ -695,7 +739,9 @@ func (s *Service) Start(ctx context.Context) error {
 	s.logger.Info("All frequency stream processors started")
 
 	// Start post-processing if enabled
-	if s.config.PostProcessing.Enabled {
+	_, ppEnabled := s.config.GetPostProcessingProvider()
+	if ppEnabled {
+
 		s.logger.Info("Starting post-processing")
 		if err := s.transcriptionManager.StartPostProcessing(s.ctx); err != nil {
 			s.logger.Error("Failed to start post-processing", Error(err))

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -23,6 +24,7 @@ type Config struct {
 	FlightPhases   FlightPhasesConfig   `toml:"flight_phases"`   // Flight phase detection settings
 	Weather        WeatherConfig        `toml:"wx"`              // Weather data fetching and caching settings
 	OpenAI         OpenAIConfig         `toml:"openai"`          // OpenAI service settings (base URL, etc.)
+	Gemini         GeminiConfig         `toml:"gemini"`          // Google Gemini service settings
 	ATCChat        ATCChatConfig        `toml:"atc_chat"`        // ATC Chat voice assistant settings
 	Templating     TemplatingConfig     `toml:"templating"`      // Shared templating system settings
 }
@@ -108,12 +110,15 @@ type StationConfig struct {
 
 // TranscriptionConfig contains settings for audio transcription services
 type TranscriptionConfig struct {
+	// Provider selection
+	Enabled any `toml:"enabled"` // Enable or disable, and select provider ("openai", "gemini", true/false)
+
 	// OpenAI API settings
-	OpenAIAPIKey  string `toml:"openai_api_key"`      // OpenAI API key for transcription service
-	OpenAIBaseURL string `toml:"openai_api_base_url"` // Optional OpenAI base URL (e.g., for proxies). Defaults to https://api.openai.com
-	Model         string `toml:"model"`               // OpenAI model to use (e.g., "gpt-4o-transcribe")
-	Language      string `toml:"language"`            // Primary language for transcription (e.g., "en" for English)
-	PromptPath    string `toml:"prompt_path"`         // Path to the system prompt file for transcription
+	// Note: API Key is now centralized in OpenAIConfig (`[openai].api_key`)
+
+	Model      string `toml:"model"`       // OpenAI model to use (e.g., "gpt-4o-transcribe")
+	Language   string `toml:"language"`    // Primary language for transcription (e.g., "en" for English)
+	PromptPath string `toml:"prompt_path"` // Path to the system prompt file for transcription
 
 	// Audio processing settings
 	NoiseReduction string `toml:"noise_reduction"` // Noise reduction mode: "near_field", "far_field", or "none"
@@ -147,7 +152,8 @@ type TranscriptionConfig struct {
 
 // PostProcessingConfig contains settings for post-processing of transcriptions
 type PostProcessingConfig struct {
-	Enabled               bool   `toml:"enabled"`                // Enable or disable post-processing
+	Enabled any `toml:"enabled"` // Enable or disable post-processing (bool or string: "openai", "gemini")
+
 	Model                 string `toml:"model"`                  // OpenAI model to use for post-processing
 	IntervalSeconds       int    `toml:"interval_seconds"`       // How often to run the post-processing (in seconds)
 	BatchSize             int    `toml:"batch_size"`             // Maximum number of transcriptions to process in each batch
@@ -261,7 +267,21 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to load station details from CSV: %w", err)
 	}
 
+	// Update derived state (must be called before Validate)
+	config.UpdateDerivedState()
+
 	return &config, nil
+}
+
+// UpdateDerivedState updates configuration fields that are derived from other settings
+func (c *Config) UpdateDerivedState() {
+	// Global Forecast System (GFS) is automatically enabled when using OpenSky
+	// because OpenSky doesn't provide wind/temp data, so we rely on GFS 3D grid.
+	if c.ADSB.SourceType == "external-opensky" {
+		c.Weather.GFS.Enabled = true
+	} else {
+		c.Weather.GFS.Enabled = false
+	}
 }
 
 // loadStationFromCSV parses the airports.csv file to find the station coordinates
@@ -379,7 +399,8 @@ func (c *Config) Validate() error {
 	}
 
 	// Validate post-processing config
-	if c.PostProcessing.Enabled && c.PostProcessing.ContextTranscriptions < 0 {
+	_, ppEnabled := c.GetPostProcessingProvider()
+	if ppEnabled && c.PostProcessing.ContextTranscriptions < 0 {
 		return fmt.Errorf("invalid context_transcriptions value: %d (must be >= 0)", c.PostProcessing.ContextTranscriptions)
 	}
 
@@ -529,7 +550,7 @@ func (c *Config) Validate() error {
 	}
 
 	// Validate OpenAI API keys for enabled features
-	if err := c.ValidateOpenAIKeys(); err != nil {
+	if err := c.ValidateAPIKeys(); err != nil {
 		return err
 	}
 
@@ -759,27 +780,118 @@ func (c *Config) ValidateFlightPhases() error {
 	return nil
 }
 
-// ValidateOpenAIKeys validates OpenAI API keys for enabled features
-func (c *Config) ValidateOpenAIKeys() error {
-	// Check transcription API key - transcription is always available if configured
-	if c.Transcription.OpenAIAPIKey == "" {
-		fmt.Printf("WARN: No OpenAI API key provided for transcription - transcription features will be disabled\n")
+// ValidateAPIKeys validates API keys for enabled features
+func (c *Config) ValidateAPIKeys() error {
+	// Check transcription API key - transcription attempts to use OpenAI key by default
+	// We only warn if transcription is explicitly configured but no key is present.
+	// However, usually Config objects are fully populated.
+	if c.OpenAI.APIKey == "" {
+		fmt.Printf("WARN: No OpenAI API key provided in [openai] - transcription features will be disabled\n")
 	}
 
-	// Check ATC chat API key if ATC chat is enabled
-	if c.ATCChat.Enabled && c.ATCChat.OpenAIAPIKey == "" {
-		fmt.Printf("WARN: ATC Chat is enabled but no OpenAI API key provided - ATC chat features will be disabled\n")
+	// Resolve ATC chat provider
+	provider, enabled := c.GetATCChatProvider()
+	if enabled {
+		switch provider {
+		case "openai":
+			if c.OpenAI.APIKey == "" {
+				return fmt.Errorf("ATC Chat is enabled with provider 'openai' but no API key provided in [openai]")
+			}
+		case "gemini":
+			if c.Gemini.APIKey == "" {
+				return fmt.Errorf("ATC Chat is enabled with provider 'gemini' but no API key provided in [gemini]")
+			}
+
+		default:
+			return fmt.Errorf("unknown ATC Chat provider: %s", provider)
+		}
 	}
 
-	// Check post-processing API key if post-processing is enabled
-	if c.PostProcessing.Enabled {
-		// Post-processing uses the same API key as transcription
-		if c.Transcription.OpenAIAPIKey == "" {
-			fmt.Printf("WARN: Post-processing is enabled but no OpenAI API key provided in transcription config - post-processing features will be disabled\n")
+	// Validate Transcription provider
+	tProvider, tEnabled := c.GetTranscriptionProvider()
+	if tEnabled {
+		switch tProvider {
+		case "openai":
+			if c.OpenAI.APIKey == "" {
+				fmt.Printf("WARN: Transcription Enabled with 'openai' but no API key provided in [openai]\n")
+			}
+		case "gemini":
+			if c.Gemini.APIKey == "" {
+				return fmt.Errorf("Transcription enabled with provider 'gemini' but no API key provided in [gemini]")
+			}
+		}
+	}
+
+	// Validate Post-Processing provider
+	ppProvider, ppEnabled := c.GetPostProcessingProvider()
+	if ppEnabled {
+		switch ppProvider {
+		case "openai":
+			if c.OpenAI.APIKey == "" {
+				fmt.Printf("WARN: Post-Processing Enabled with 'openai' but no API key provided in [openai]\n")
+			}
+		case "gemini":
+			if c.Gemini.APIKey == "" {
+				return fmt.Errorf("Post-Processing enabled with provider 'gemini' but no API key provided in [gemini]")
+			}
 		}
 	}
 
 	return nil
+}
+
+// GetATCChatProvider returns the configured provider and whether it is enabled
+func (c *Config) GetATCChatProvider() (string, bool) {
+	// Ensure default values are set if zero/empty
+	if c.ATCChat.SampleRate == 0 {
+		c.ATCChat.SampleRate = 24000
+	}
+	if c.ATCChat.Channels == 0 {
+		c.ATCChat.Channels = 1
+	}
+
+	return parseProviderState(c.ATCChat.Enabled)
+}
+
+// GetTranscriptionProvider returns the configured provider and whether it is enabled
+func (c *Config) GetTranscriptionProvider() (string, bool) {
+	// Ensure default values are set if zero/empty
+	if c.Transcription.FFmpegSampleRate == 0 {
+		c.Transcription.FFmpegSampleRate = 24000
+	}
+	if c.Transcription.FFmpegChannels == 0 {
+		c.Transcription.FFmpegChannels = 1
+	}
+
+	return parseProviderState(c.Transcription.Enabled)
+}
+
+// GetPostProcessingProvider returns the configured provider and whether it is enabled
+func (c *Config) GetPostProcessingProvider() (string, bool) {
+	return parseProviderState(c.PostProcessing.Enabled)
+}
+
+// parseProviderState parses the enabled field to determine provider and status
+func parseProviderState(enabledField any) (string, bool) {
+	if enabledField == nil {
+		return "openai", false
+	}
+
+	switch v := enabledField.(type) {
+	case bool:
+		return "openai", v // Default to openai if true
+	case string:
+		v = strings.ToLower(v)
+		if v == "true" {
+			return "openai", true
+		}
+		if v == "false" || v == "" {
+			return "openai", false
+		}
+		return v, true // "openai", "gemini", etc.
+	default:
+		return "", false
+	}
 }
 
 // ValidateWeather validates the weather configuration
@@ -838,7 +950,7 @@ type WeatherConfig struct {
 
 // GFSConfig contains configuration for NOAA GFS data fetching
 type GFSConfig struct {
-	Enabled                bool    `toml:"enabled"`                  // Enable fetching GFS 3D wind/temp grid
+	Enabled                bool    `toml:"-"`                        // Internal use only - automatically enabled based on source type
 	BaseURL                string  `toml:"base_url"`                 // Base URL for GFS provider (e.g., api.open-meteo.com)
 	RefreshIntervalMinutes int     `toml:"refresh_interval_minutes"` // How often to fetch the 3D grid (default: 60)
 	GridDomainRadiusNM     float64 `toml:"grid_domain_radius_nm"`    // Radius of the weather grid in nautical miles (default: 60)
@@ -854,6 +966,9 @@ type OpenAIConfig struct {
 	// - "https://your-proxy.example.com/openai"
 	// If empty, the application will default to "https://api.openai.com".
 	BaseURL string `toml:"base_url"`
+
+	// APIKey is the centralized API key for OpenAI services.
+	APIKey string `toml:"api_key"`
 
 	// RealtimeSessionPath is the path used to create realtime sessions (POST).
 	// Default: /v1/realtime/sessions
@@ -874,13 +989,18 @@ type OpenAIConfig struct {
 	ChatCompletionsPath string `toml:"chat_completions_path"`
 }
 
+// GeminiConfig contains Google Gemini service configuration.
+type GeminiConfig struct {
+	APIKey string `toml:"api_key"` // API Key for Google Gemini
+}
+
 // ATCChatConfig contains ATC Chat voice assistant configuration
 type ATCChatConfig struct {
 	// Feature toggle
-	Enabled bool `toml:"enabled"` // Enable or disable ATC Chat feature
+	Enabled any `toml:"enabled"` // Enable or disable ATC Chat feature (bool or string: "openai", "gemini")
 
 	// OpenAI API settings
-	OpenAIAPIKey  string `toml:"openai_api_key"` // OpenAI API key for realtime chat
+	// (OpenAIAPIKey removed, use [openai].api_key or [gemini].api_key)
 	RealtimeModel string `toml:"realtime_model"` // OpenAI realtime model to use
 	Voice         string `toml:"voice"`          // Voice for audio responses
 
@@ -903,8 +1023,8 @@ type ATCChatConfig struct {
 	TranscriptionHistorySeconds int `toml:"transcription_history_seconds"` // Seconds of transcription history to include
 
 	// System prompt configuration
-	SystemPromptPath        string `toml:"system_prompt_path"`    // Path to system prompt template file
-	RefreshSystemPromptSecs int    `toml:"refresh_system_prompt"` // Automatic system prompt refresh interval in seconds (0 = disabled)
+	SystemPromptPath    string `toml:"system_prompt_path"`    // Path to system prompt template file
+	RefreshSystemPrompt int    `toml:"refresh_system_prompt"` // Automatic system prompt refresh interval in seconds (0 = disabled)
 }
 
 // TemplatingConfig contains shared templating system configuration

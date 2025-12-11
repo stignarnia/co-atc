@@ -218,7 +218,8 @@ func main() {
 
 	// Create ATC Chat service (if enabled)
 	var atcChatService *atcchat.Service
-	if cfg.ATCChat.Enabled {
+	_, chatEnabled := cfg.GetATCChatProvider()
+	if chatEnabled {
 		log.Info("Creating ATC Chat service")
 		atcChatService, err = atcchat.NewService(
 			templateService,

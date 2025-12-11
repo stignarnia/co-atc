@@ -47,10 +47,6 @@ source_type = "local"
 # URL to the aircraft.json file from your local ADS-B receiver (tar1090)
 local_source_url = "http://192.168.1.166/tar1090/data/aircraft.json"
 
-# External source configuration (used when source_type = "external")
-# URL template with format placeholders for latitude, longitude, and distance
-external_source_url = "https://adsbexchange-com1.p.rapidapi.com/v2/lat/%f/lon/%f/dist/%.0f/"
-
 # API authentication for external source, if it doesn't use it (like adsb.lol), leave both empty
 api_host = "adsbexchange-com1.p.rapidapi.com"
 api_key = ""  # Replace with your actual API key
@@ -192,9 +188,12 @@ transcribe_audio = true
 # - This will eat up your API credits, so please be careful.
 #######################################################
 [transcription]
-# OpenAI API settings
-openai_api_key = ""              # Replace with your actual API key
-model = "gpt-4o-transcribe"      # OpenAI model to use for transcription
+# Enable/disable Transcription feature
+# Values: "openai", "gemini", true (openai), false
+enabled = "openai"
+
+# OpenAI/Gemini API settings
+model = "gpt-4o-transcribe"      # Model to use for transcription
 language = "en"                  # Primary language for transcription (e.g., "en" for English)
 
 # Audio processing settings
@@ -234,9 +233,11 @@ prompt_path = "prompts/transcription_prompt.txt"
 #######################################################
 [post_processing]
 # Enable or disable post-processing
-enabled = true
+# Values: "openai", "gemini", true (openai), false
+enabled = "openai"
 
-# OpenAI model to use for post-processing
+# Model to use for post-processing
+
 model = "gpt-4o"
 
 # How often to run the post-processing (in seconds)
@@ -350,7 +351,6 @@ cache_expiry_minutes = 60  # How long to keep cached data if refresh fails
 # Global Forecast System (GFS) Configuration
 # Provides 3D wind and temperature data for accurate aircraft performance calculations.
 [wx.gfs]
-enabled = true
 base_url = "https://api.open-meteo.com/v1/gfs" # Open-Meteo GFS API endpoint
 refresh_interval_minutes = 60 # Update the 3D grid once per hour
 
@@ -365,6 +365,9 @@ refresh_interval_minutes = 60 # Update the 3D grid once per hour
 # transcription_session_path = "/v1/realtime/transcription_sessions"
 # chat_completions_path = "/v1/chat/completions"
 [openai]
+# API Key for OpenAI services (Centralized)
+api_key = ""
+
 # Base URL for OpenAI API requests (default: OpenAI upstream)
 base_url = "https://api.openai.com"
 
@@ -381,17 +384,23 @@ transcription_session_path = "/v1/realtime/transcription_sessions"
 # Path used for chat completions / conversational responses
 chat_completions_path = "/v1/chat/completions"
 
+# Google Gemini Configuration
+[gemini]
+# API Key for Google Gemini services
+api_key = ""
+
 #######################################################
 # ATC Chat Configuration
 #######################################################
 [atc_chat]
 # Enable/disable ATC Chat feature
-enabled = true
+# Values: "openai", "gemini", true (openai), false
+enabled = "openai"
 
-# OpenAI API settings for realtime chat
-openai_api_key = ""              # Replace with your actual API key
+# OpenAI/Gemini API settings
+# Note: API keys are now centralized under [openai] and [gemini] sections
 realtime_model = "gpt-4o-realtime-preview-2025-06-03"
-voice = "ash"  # Voice options: 'alloy', 'ash',
+voice = "ash" # Voice options: 'alloy', 'ash',
 
 # Audio settings
 input_audio_format = "pcm16"

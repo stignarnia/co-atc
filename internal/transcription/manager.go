@@ -3,10 +3,10 @@ package transcription
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
+	"github.com/yegors/co-atc/internal/ai"
 	"github.com/yegors/co-atc/internal/audio"
 	"github.com/yegors/co-atc/internal/storage/sqlite"
 	"github.com/yegors/co-atc/internal/websocket"
@@ -15,19 +15,20 @@ import (
 
 // TranscriptionManager manages transcription processors for frequencies
 type TranscriptionManager struct {
-	processors           map[string]ProcessorInterface
-	mu                   sync.RWMutex
-	wsServer             *websocket.Server
-	transcriptionStorage *sqlite.TranscriptionStorage
-	aircraftStorage      *sqlite.AircraftStorage
-	clearanceStorage     *sqlite.ClearanceStorage
-	logger               *logger.Logger
-	openAIAPIKey         string
-	transcriptionConfig  Config
-	postProcessor        *PostProcessor
-	postProcessingConfig PostProcessingConfig
-	templateRenderer     TemplateRenderer
-	frequencyNames       map[string]string // Map of frequency IDs to names
+	processors            map[string]ProcessorInterface
+	mu                    sync.RWMutex
+	wsServer              *websocket.Server
+	transcriptionStorage  *sqlite.TranscriptionStorage
+	aircraftStorage       *sqlite.AircraftStorage
+	clearanceStorage      *sqlite.ClearanceStorage
+	logger                *logger.Logger
+	transcriptionProvider ai.TranscriptionProvider
+	chatProvider          ai.ChatProvider
+	transcriptionConfig   Config
+	postProcessor         *PostProcessor
+	postProcessingConfig  PostProcessingConfig
+	templateRenderer      TemplateRenderer
+	frequencyNames        map[string]string // Map of frequency IDs to names
 }
 
 // NewTranscriptionManager creates a new transcription manager
@@ -37,7 +38,8 @@ func NewTranscriptionManager(
 	aircraftStorage *sqlite.AircraftStorage,
 	clearanceStorage *sqlite.ClearanceStorage,
 	logger *logger.Logger,
-	openAIAPIKey string,
+	transcriptionProvider ai.TranscriptionProvider,
+	chatProvider ai.ChatProvider,
 	transcriptionConfig Config,
 	postProcessingConfig PostProcessingConfig,
 	templateRenderer TemplateRenderer,
@@ -50,17 +52,18 @@ func NewTranscriptionManager(
 	}
 
 	return &TranscriptionManager{
-		processors:           make(map[string]ProcessorInterface),
-		wsServer:             wsServer,
-		transcriptionStorage: transcriptionStorage,
-		aircraftStorage:      aircraftStorage,
-		clearanceStorage:     clearanceStorage,
-		logger:               logger,
-		openAIAPIKey:         openAIAPIKey,
-		transcriptionConfig:  transcriptionConfig,
-		postProcessingConfig: postProcessingConfig,
-		templateRenderer:     templateRenderer,
-		frequencyNames:       frequencyNames,
+		processors:            make(map[string]ProcessorInterface),
+		wsServer:              wsServer,
+		transcriptionStorage:  transcriptionStorage,
+		aircraftStorage:       aircraftStorage,
+		clearanceStorage:      clearanceStorage,
+		logger:                logger,
+		transcriptionProvider: transcriptionProvider,
+		chatProvider:          chatProvider,
+		transcriptionConfig:   transcriptionConfig,
+		postProcessingConfig:  postProcessingConfig,
+		templateRenderer:      templateRenderer,
+		frequencyNames:        frequencyNames,
 	}
 }
 
@@ -83,6 +86,11 @@ func (m *TranscriptionManager) StartTranscription(
 		m.logger.Info("Transcription not enabled for frequency",
 			logger.String("id", frequencyID),
 			logger.String("name", frequencyName))
+		return nil
+	}
+
+	if m.transcriptionProvider == nil {
+		m.logger.Warn("Transcription provider not configured", logger.String("id", frequencyID))
 		return nil
 	}
 
@@ -145,6 +153,7 @@ func (m *TranscriptionManager) StartTranscription(
 		m.wsServer,
 		m.transcriptionStorage,
 		m.logger,
+		m.transcriptionProvider,
 	)
 	if err != nil {
 		return err
@@ -177,11 +186,8 @@ func (m *TranscriptionManager) StartTranscriptionWithExternalAudio(
 		return nil
 	}
 
-	// Skip if no OpenAI API key is provided
-	if m.openAIAPIKey == "" {
-		m.logger.Info("Transcription disabled - no OpenAI API key provided",
-			logger.String("id", frequencyID),
-			logger.String("name", frequencyName))
+	if m.transcriptionProvider == nil {
+		m.logger.Warn("Transcription provider not configured", logger.String("id", frequencyID))
 		return nil
 	}
 
@@ -200,7 +206,6 @@ func (m *TranscriptionManager) StartTranscriptionWithExternalAudio(
 		logger.String("id", frequencyID),
 		logger.String("name", frequencyName))
 
-	// Create external processor based on the type of audio processor
 	var processor ProcessorInterface
 	var err error
 
@@ -225,6 +230,7 @@ func (m *TranscriptionManager) StartTranscriptionWithExternalAudio(
 		m.wsServer,
 		m.transcriptionStorage,
 		m.logger,
+		m.transcriptionProvider,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create external processor: %w", err)
@@ -296,23 +302,20 @@ func (m *TranscriptionManager) StartPostProcessing(ctx context.Context) error {
 		return nil
 	}
 
-	// Skip if no OpenAI API key is provided
-	if m.openAIAPIKey == "" {
-		m.logger.Info("Post-processing disabled - no OpenAI API key provided")
+	if m.chatProvider == nil {
+		m.logger.Info("Post-processing disabled - no chat provider configured")
 		return nil
 	}
 
-	// Create OpenAI client for post-processing (pass explicit OpenAI base if configured in environment)
-	openaiClient := NewOpenAIClient(m.openAIAPIKey, m.postProcessingConfig.Model, m.postProcessingConfig.TimeoutSeconds, m.logger, os.Getenv("OPENAI_API_BASE"))
-
 	// Create post-processor
 	var err error
+	// NewPostProcessor needs to update signature to accept ai.ChatProvider
 	m.postProcessor, err = NewPostProcessor(
 		ctx,
 		m.transcriptionStorage,
 		m.aircraftStorage,
 		m.clearanceStorage,
-		openaiClient,
+		m.chatProvider,
 		m.wsServer,
 		m.templateRenderer,
 		m.postProcessingConfig,

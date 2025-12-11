@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/yegors/co-atc/internal/ai"
 	"github.com/yegors/co-atc/internal/storage/sqlite"
 	"github.com/yegors/co-atc/internal/websocket"
 	"github.com/yegors/co-atc/pkg/logger"
@@ -44,7 +46,7 @@ type PostProcessor struct {
 	transcriptionStorage *sqlite.TranscriptionStorage
 	aircraftStorage      *sqlite.AircraftStorage
 	clearanceStorage     *sqlite.ClearanceStorage
-	openaiClient         *OpenAIClient
+	chatProvider         ai.ChatProvider
 	wsServer             *websocket.Server
 	templateRenderer     TemplateRenderer
 	logger               *logger.Logger
@@ -61,13 +63,17 @@ func NewPostProcessor(
 	transcriptionStorage *sqlite.TranscriptionStorage,
 	aircraftStorage *sqlite.AircraftStorage,
 	clearanceStorage *sqlite.ClearanceStorage,
-	openaiClient *OpenAIClient,
+	chatProvider ai.ChatProvider,
 	wsServer *websocket.Server,
 	templateRenderer TemplateRenderer,
 	config PostProcessingConfig,
 	logger *logger.Logger,
 	frequencyNames map[string]string,
 ) (*PostProcessor, error) {
+	if chatProvider == nil {
+		return nil, fmt.Errorf("chat provider is required for post-processing")
+	}
+
 	// Create context with cancellation
 	procCtx, procCancel := context.WithCancel(ctx)
 
@@ -78,7 +84,7 @@ func NewPostProcessor(
 		transcriptionStorage: transcriptionStorage,
 		aircraftStorage:      aircraftStorage,
 		clearanceStorage:     clearanceStorage,
-		openaiClient:         openaiClient,
+		chatProvider:         chatProvider,
 		wsServer:             wsServer,
 		templateRenderer:     templateRenderer,
 		logger:               logger.Named("post-processor"),
@@ -144,7 +150,7 @@ type TranscriptionBatch struct {
 
 // processNextBatch processes the next batch of unprocessed transcriptions
 func (p *PostProcessor) processNextBatch() error {
-	// Get unprocessed transcriptions
+	// Fetch unprocessed records from storage
 	records, err := p.transcriptionStorage.GetUnprocessedTranscriptions(p.batchSize)
 	if err != nil {
 		return fmt.Errorf("failed to get unprocessed transcriptions: %w", err)
@@ -157,7 +163,7 @@ func (p *PostProcessor) processNextBatch() error {
 
 	p.logger.Debug("Processing batch of transcriptions", logger.Int("count", len(records)))
 
-	// Get frequency name for the first record (assuming all records are from the same frequency)
+	// Get frequency name
 	var frequencyName string
 	var frequencyID string
 	if len(records) > 0 {
@@ -170,22 +176,19 @@ func (p *PostProcessor) processNextBatch() error {
 		}
 	}
 
-	// Get the last N processed transcriptions for context
+	// Get context
 	var contextRecords []*sqlite.TranscriptionRecord
 	if frequencyID != "" && p.config.ContextTranscriptions > 0 {
 		contextRecords, err = p.transcriptionStorage.GetLastProcessedTranscriptions(frequencyID, p.config.ContextTranscriptions)
 		if err != nil {
 			p.logger.Error("Failed to get context transcriptions", logger.Error(err))
-			// Continue without context
 		} else {
 			p.logger.Debug("Including context transcriptions", logger.Int("count", len(contextRecords)))
 		}
 	}
 
-	// Prepare batch of transcriptions for processing
+	// Prepare batch
 	var batch []TranscriptionBatch
-
-	// Add both context and unprocessed transcriptions to the batch
 	for _, record := range contextRecords {
 		batch = append(batch, TranscriptionBatch{
 			ID:               record.ID,
@@ -193,7 +196,7 @@ func (p *PostProcessor) processNextBatch() error {
 			ContentProcessed: record.ContentProcessed,
 			SpeakerType:      record.SpeakerType,
 			Callsign:         record.Callsign,
-			Clearances:       []sqlite.ExtractedClearance{}, // Empty for context records
+			Clearances:       []sqlite.ExtractedClearance{},
 			Timestamp:        record.CreatedAt,
 		})
 	}
@@ -205,124 +208,64 @@ func (p *PostProcessor) processNextBatch() error {
 			ContentProcessed: "",
 			SpeakerType:      "",
 			Callsign:         "",
-			Clearances:       []sqlite.ExtractedClearance{}, // Will be filled by AI
+			Clearances:       []sqlite.ExtractedClearance{},
 			Timestamp:        record.CreatedAt,
 		})
 	}
-
-	// Sort the batch by timestamp (oldest to newest)
 	p.sortBatchByTimestamp(batch)
 
-	// Convert batch to JSON
 	batchJSON, err := json.MarshalIndent(batch, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal transcription batch: %w", err)
 	}
 
-	// Use template renderer to generate system prompt with current airspace data
 	systemPrompt, err := p.templateRenderer.RenderPostProcessorTemplate(p.config.SystemPromptPath)
 	if err != nil {
-		p.logger.Error("Failed to render system prompt template", logger.Error(err))
-		// Mark all records as failed to prevent infinite retry
-		for _, record := range records {
-			if updateErr := p.transcriptionStorage.UpdateProcessedTranscription(
-				record.ID,
-				"[TEMPLATE_RENDER_FAILED]",
-				"UNKNOWN",
-				"",
-			); updateErr != nil {
-				p.logger.Error("Failed to mark transcription as failed",
-					logger.Int64("id", record.ID),
-					logger.Error(updateErr))
-			}
-		}
+		// handle failure
+		p.markFailed(records, "[TEMPLATE_RENDER_FAILED]")
 		return err
 	}
 
-	// User input contains only the frequency and transcriptions data
 	userInput := fmt.Sprintf("Radio Frequency:\n%s\n\nTransmissions Log:\n%s",
 		frequencyName,
 		string(batchJSON))
 
-	// Process the batch
 	results, err := p.processBatch(systemPrompt, userInput)
 	if err != nil {
-		p.logger.Error("Failed to process batch", logger.Error(err))
-		// Mark all records as failed to prevent infinite retry
-		for _, record := range records {
-			if updateErr := p.transcriptionStorage.UpdateProcessedTranscription(
-				record.ID,
-				"[PROCESSING_FAILED]",
-				"UNKNOWN",
-				"",
-			); updateErr != nil {
-				p.logger.Error("Failed to mark transcription as failed",
-					logger.Int64("id", record.ID),
-					logger.Error(updateErr))
-			}
-		}
+		p.markFailed(records, "[PROCESSING_FAILED]")
 		return err
 	}
 
-	// Check if we got any results
 	if len(results) == 0 {
-		p.logger.Warn("No results returned from OpenAI API, marking batch as failed")
-		// Mark all records as failed to prevent infinite retry
-		for _, record := range records {
-			if updateErr := p.transcriptionStorage.UpdateProcessedTranscription(
-				record.ID,
-				"[NO_RESULTS_FROM_API]",
-				"UNKNOWN",
-				"",
-			); updateErr != nil {
-				p.logger.Error("Failed to mark transcription as failed",
-					logger.Int64("id", record.ID),
-					logger.Error(updateErr))
-			}
-		}
+		p.logger.Warn("No results returned from API")
+		p.markFailed(records, "[NO_RESULTS_FROM_API]")
 		return nil
 	}
 
-	// Update database with processed transcriptions
+	// Update DB with processed results
 	for _, result := range results {
-		// Skip results with empty processed content or already processed transcriptions (context)
 		if result.ContentProcessed == "" {
-			p.logger.Warn("Skipping result with empty processed content - this indicates OpenAI returned a result but didn't fill in the content_processed field",
-				logger.Int64("id", result.ID),
-				logger.String("original_content", result.Content),
-				logger.String("speaker_type", result.SpeakerType),
-				logger.String("callsign", result.Callsign))
 			continue
 		}
 
-		// Skip context transcriptions that were already processed
 		isContextRecord := false
-		for _, contextRecord := range contextRecords {
-			if contextRecord.ID == result.ID {
+		for _, cr := range contextRecords {
+			if cr.ID == result.ID {
 				isContextRecord = true
 				break
 			}
 		}
 		if isContextRecord {
-			p.logger.Debug("Skipping context record that was already processed",
-				logger.Int64("id", result.ID))
 			continue
 		}
 
-		// Update database
 		if err := p.transcriptionStorage.UpdateProcessedTranscription(
-			result.ID,
-			result.ContentProcessed,
-			result.SpeakerType,
-			result.Callsign,
+			result.ID, result.ContentProcessed, result.SpeakerType, result.Callsign,
 		); err != nil {
-			p.logger.Error("Failed to update processed transcription",
-				logger.Int64("id", result.ID),
-				logger.Error(err))
+			p.logger.Error("Failed to update", logger.Error(err))
 			continue
 		}
 
-		// Process clearances if this is an ATC transmission with clearances
 		if result.SpeakerType == "ATC" && len(result.Clearances) > 0 {
 			for _, clearance := range result.Clearances {
 				clearanceRecord := &sqlite.ClearanceRecord{
@@ -335,31 +278,15 @@ func (p *PostProcessor) processNextBatch() error {
 					Status:          "issued",
 					CreatedAt:       time.Now().UTC(),
 				}
-
-				clearanceID, err := p.clearanceStorage.StoreClearance(clearanceRecord)
-				if err != nil {
-					p.logger.Error("Failed to store clearance",
-						logger.String("callsign", clearance.Callsign),
-						logger.String("type", clearance.Type),
-						logger.Error(err))
-					continue
+				cid, err := p.clearanceStorage.StoreClearance(clearanceRecord)
+				if err == nil {
+					clearanceRecord.ID = cid
+					p.broadcastClearanceEvent(clearanceRecord)
 				}
-
-				// Set the ID for broadcasting
-				clearanceRecord.ID = clearanceID
-
-				// Broadcast clearance event via WebSocket
-				p.broadcastClearanceEvent(clearanceRecord)
-
-				p.logger.Info("Stored clearance",
-					logger.String("callsign", clearance.Callsign),
-					logger.String("type", clearance.Type),
-					logger.String("runway", clearance.Runway),
-					logger.Int64("clearance_id", clearanceID))
 			}
 		}
 
-		// Find the original record to broadcast
+		// find record and log
 		var record *sqlite.TranscriptionRecord
 		for _, r := range records {
 			if r.ID == result.ID {
@@ -367,64 +294,70 @@ func (p *PostProcessor) processNextBatch() error {
 				break
 			}
 		}
-
-		if record == nil {
-			p.logger.Error("Failed to find original record for broadcasting",
-				logger.Int64("id", result.ID))
-			continue
+		if record != nil {
+			record.ContentProcessed = result.ContentProcessed
+			record.SpeakerType = result.SpeakerType
+			record.Callsign = result.Callsign
+			record.IsProcessed = true
+			p.logProcessedTranscription(record)
 		}
-
-		// Update the record with processed content
-		record.ContentProcessed = result.ContentProcessed
-		record.SpeakerType = result.SpeakerType
-		record.Callsign = result.Callsign
-		record.IsProcessed = true
-
-		// Log the processed transcription instead of broadcasting
-		p.logProcessedTranscription(record)
 	}
-
 	return nil
 }
 
-// processBatch processes a batch of transcriptions
+func (p *PostProcessor) markFailed(records []*sqlite.TranscriptionRecord, reason string) {
+	for _, r := range records {
+		p.transcriptionStorage.UpdateProcessedTranscription(r.ID, reason, "UNKNOWN", "")
+	}
+}
+
+// processBatch processes a batch using ChatProvider
 func (p *PostProcessor) processBatch(systemPrompt string, userInput string) ([]TranscriptionBatch, error) {
-	// Call OpenAI API to process the batch
-	results, err := p.openaiClient.PostProcessBatch(p.ctx, systemPrompt, userInput, p.config.Model)
+	messages := []ai.ChatMessage{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userInput},
+	}
+
+	options := ai.ChatConfig{
+		Model:       p.config.Model,
+		Temperature: 0.0,
+		MaxTokens:   4096,
+	}
+
+	content, err := p.chatProvider.ChatCompletion(p.ctx, messages, options)
 	if err != nil {
-		return nil, fmt.Errorf("failed to post-process batch: %w", err)
+		return nil, fmt.Errorf("chat completion failed: %w", err)
+	}
+
+	// Parse JSON from content
+	startIdx := strings.Index(content, "[")
+	endIdx := strings.LastIndex(content, "]")
+
+	if startIdx == -1 || endIdx == -1 || startIdx >= endIdx {
+		return nil, fmt.Errorf("response does not contain valid JSON array: %s", content)
+	}
+
+	jsonContent := content[startIdx : endIdx+1]
+
+	var results []TranscriptionBatch
+	if err := json.Unmarshal([]byte(jsonContent), &results); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
 	return results, nil
 }
 
-// getFrequencyName retrieves the name of a frequency from its ID
 func (p *PostProcessor) getFrequencyName(frequencyID string) (string, error) {
-	// Check if we have the frequency name in our cache
 	if name, ok := p.frequencyNames[frequencyID]; ok {
+
 		return name, nil
 	}
-
-	// If not in cache, try to get it from the database
-	// This would require adding a method to get frequency info from the database
-	// For now, we'll just return the ID as the name
 	return frequencyID, nil
 }
 
-// logProcessedTranscription logs a processed transcription to the server console and broadcasts it to WebSocket clients
 func (p *PostProcessor) logProcessedTranscription(record *sqlite.TranscriptionRecord) {
-	// Log the processed transcription at debug level
-	p.logger.Debug("Processed transcription",
-		logger.Int64("id", record.ID),
-		logger.String("frequency_id", record.FrequencyID),
-		logger.String("original_content", record.Content),
-		logger.String("processed_content", record.ContentProcessed),
-		logger.String("speaker_type", record.SpeakerType),
-		logger.String("callsign", record.Callsign),
-		logger.Time("timestamp", record.CreatedAt))
-
-	// Create WebSocket message to update the original message
-	message := &websocket.Message{
+	p.logger.Debug("Processed transcription", logger.Int64("id", record.ID))
+	p.wsServer.Broadcast(&websocket.Message{
 		Type: "transcription_update",
 		Data: map[string]interface{}{
 			"id":                record.ID,
@@ -437,28 +370,17 @@ func (p *PostProcessor) logProcessedTranscription(record *sqlite.TranscriptionRe
 			"speaker_type":      record.SpeakerType,
 			"callsign":          record.Callsign,
 		},
-	}
-
-	// Log the message we're about to send
-	p.logger.Debug("Broadcasting processed transcription to WebSocket clients",
-		logger.Int64("id", record.ID),
-		logger.String("frequency_id", record.FrequencyID))
-
-	// Broadcast to WebSocket clients
-	p.wsServer.Broadcast(message)
+	})
 }
 
-// sortBatchByTimestamp sorts a batch of transcriptions by timestamp (oldest to newest)
 func (p *PostProcessor) sortBatchByTimestamp(batch []TranscriptionBatch) {
-	// Sort the batch by timestamp (ascending order - oldest first)
 	sort.Slice(batch, func(i, j int) bool {
 		return batch[i].Timestamp.Before(batch[j].Timestamp)
 	})
 }
 
-// broadcastClearanceEvent broadcasts a clearance event via WebSocket
 func (p *PostProcessor) broadcastClearanceEvent(clearance *sqlite.ClearanceRecord) {
-	message := &websocket.Message{
+	p.wsServer.Broadcast(&websocket.Message{
 		Type: "clearance_issued",
 		Data: map[string]interface{}{
 			"id":             clearance.ID,
@@ -469,14 +391,5 @@ func (p *PostProcessor) broadcastClearanceEvent(clearance *sqlite.ClearanceRecor
 			"timestamp":      clearance.Timestamp,
 			"status":         clearance.Status,
 		},
-	}
-
-	// Log the message we're about to send
-	p.logger.Debug("Broadcasting clearance event to WebSocket clients",
-		logger.Int64("id", clearance.ID),
-		logger.String("callsign", clearance.Callsign),
-		logger.String("type", clearance.ClearanceType))
-
-	// Broadcast to WebSocket clients
-	p.wsServer.Broadcast(message)
+	})
 }

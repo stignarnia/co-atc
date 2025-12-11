@@ -17,17 +17,17 @@ class ATCChat {
         this.aiVisualizationFrameId = null;
         this.audioAnalyser = null;
         this.audioDataArray = null;
-        
+
         // Transcript functionality
         this.transcripts = [];
         this.filteredTranscripts = [];
         this.transcriptViewerVisible = false;
         this.transcriptSearchTerm = '';
         this.transcriptIdCounter = 0;
-        
+
         // Initialize filtered transcripts
         this.filterTranscripts();
-        
+
         this.init();
     }
 
@@ -79,7 +79,7 @@ class ATCChat {
     hideStatusIndicator() {
         const statusElement = document.getElementById('ai-advisory-status');
         const activityIndicator = document.getElementById('ai-activity-indicator');
-        
+
         if (statusElement) {
             statusElement.textContent = 'Disconnected';
         }
@@ -109,7 +109,7 @@ class ATCChat {
 
     async init() {
         console.log('[ATC-Chat] Initializing ATC Chat...');
-        
+
         // Check if ATC Chat is enabled
         try {
             const response = await fetch(`${window.location.protocol}//${window.location.hostname}:8000/api/v1/config`);
@@ -120,10 +120,10 @@ class ATCChat {
                 this.setupKeyboardListeners();
                 return;
             }
-            
+
             const config = await response.json();
             console.log('[ATC-Chat] Config loaded:', config);
-            
+
             if (!config.atc_chat?.enabled) {
                 console.log('[ATC-Chat] ATC Chat is disabled in configuration');
                 // Hide the button if disabled
@@ -133,7 +133,7 @@ class ATCChat {
                 }
                 return;
             }
-            
+
             console.log('[ATC-Chat] ATC Chat is enabled, setting up...');
             this.createChatButton();
             this.setupKeyboardListeners();
@@ -147,19 +147,19 @@ class ATCChat {
 
     createChatButton() {
         console.log('[ATC-Chat] Setting up AI Advisory interface...');
-        
+
         // Make the ATC Chat instance globally available for the UI
         window.atcChat = this;
-        
+
         // Add CSS styles for dynamic states
         this.addStyles();
-        
+
         console.log('[ATC-Chat] AI Advisory interface setup complete');
     }
 
     setupKeyboardListeners() {
         let spacePressed = false;
-        
+
         document.addEventListener('keydown', (event) => {
             if (event.code === 'Space' && !event.repeat && this.isConnected && !spacePressed) {
                 event.preventDefault();
@@ -249,7 +249,7 @@ class ATCChat {
         try {
             console.log('[ATC-Chat] Starting ATC Chat...');
             this.showStatusIndicator('connected', 'Connecting...');
-            
+
             // Create session
             console.log('[ATC-Chat] Creating session...');
             const response = await fetch(`${window.location.protocol}//${window.location.hostname}:8000/api/v1/atc-chat/session`, {
@@ -280,10 +280,10 @@ class ATCChat {
 
             this.isConnected = true;
             this.showStatusIndicator('connected', 'PTT - Hold Space');
-            
+
             // Start AI audio visualization
             this.startAIAudioVisualization();
-            
+
             // Trigger Alpine.js reactivity
             this.triggerReactivity();
 
@@ -341,16 +341,16 @@ class ATCChat {
             }
 
             this.isConnected = false;
-            
+
             // Hide status indicator
             const statusIndicator = document.getElementById('atc-chat-status');
             if (statusIndicator) {
                 statusIndicator.classList.remove('active');
             }
-            
+
             // Reset status to disconnected
             this.hideStatusIndicator();
-            
+
             // Trigger Alpine.js reactivity
             this.triggerReactivity();
 
@@ -387,10 +387,10 @@ class ATCChat {
                 this.audioAnalyser.fftSize = 256;
                 this.audioAnalyser.smoothingTimeConstant = 0.5;
                 this.audioDataArray = new Uint8Array(this.audioAnalyser.frequencyBinCount);
-                
+
                 sourceNode.connect(this.audioAnalyser);
                 // Don't connect to destination to avoid feedback
-                
+
                 console.log('[ATC-Chat] Audio analyser set up for visualization');
             } catch (e) {
                 console.warn('[ATC-Chat] Could not set up audio analyser:', e);
@@ -408,7 +408,7 @@ class ATCChat {
         return new Promise((resolve, reject) => {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.hostname}:8000/api/v1/atc-chat/ws/${this.sessionId}`;
-            
+
             // Set timeout first, before creating WebSocket
             const timeout = setTimeout(() => {
                 if (this.websocket && this.websocket.readyState !== WebSocket.OPEN) {
@@ -417,7 +417,7 @@ class ATCChat {
                     reject(new Error('WebSocket connection timeout'));
                 }
             }, 15000); // Increased timeout to 15 seconds
-            
+
             this.websocket = new WebSocket(wsUrl);
 
             this.websocket.onopen = () => {
@@ -464,8 +464,8 @@ class ATCChat {
                 case 'connection_ready':
                     console.log('[ATC-Chat] Server connection established, waiting for OpenAI...');
                     break;
-                case 'openai_ready':
-                    console.log('[ATC-Chat] OpenAI connection established, ready for voice chat!');
+                case 'provider_ready':
+                    console.log('[ATC-Chat] Provider connection established, ready for voice chat!');
                     break;
                 case 'connection_error':
                     console.error('[ATC-Chat] Connection error:', message.error);
@@ -533,13 +533,13 @@ class ATCChat {
                 case 'conversation.item.created':
                     console.log('[ATC-Chat] AI response started');
                     this.showStatusIndicator('processing', 'AI Responding...');
-                    
+
                     // Clear any existing audio queue to prevent old audio from replaying
                     if (this.audioQueue.length > 0) {
                         console.log('[ATC-Chat] Clearing old audio queue with', this.audioQueue.length, 'items');
                         this.audioQueue = [];
                     }
-                    
+
                     // Log the full message to see what data is available
                     if (message.item && message.item.content) {
                         console.log('[ATC-Chat] Chat - AI-ATC:', message.item.content);
@@ -557,7 +557,7 @@ class ATCChat {
                     console.error('[ATC-Chat] ATC Chat error:', message.error);
                     break;
                 default:
-                    //console.log('[ATC-Chat] OpenAI message type:', message.type, message);
+                //console.log('[ATC-Chat] OpenAI message type:', message.type, message);
             }
         } catch (error) {
             console.error('[ATC-Chat] Failed to parse WebSocket message:', error);
@@ -573,11 +573,11 @@ class ATCChat {
         if (!this.isConnected || this.pushToTalkActive) return;
 
         this.pushToTalkActive = true;
-        
+
         // Update context with fresh airspace data when PTT is pressed
         this.showStatusIndicator('push-to-talk', 'Updating context...');
         await this.updateSessionContext();
-        
+
         // Start listening after context is updated
         this.showStatusIndicator('push-to-talk', 'Listening...');
         this.startRecording();
@@ -589,7 +589,7 @@ class ATCChat {
         this.pushToTalkActive = false;
         this.showStatusIndicator('processing', 'Processing...');
         this.stopRecording();
-        
+
         // Will return to ready state when AI response is complete
     }
 
@@ -631,7 +631,7 @@ class ATCChat {
 
             // Create media stream source
             const source = this.audioContext.createMediaStreamSource(this.stream);
-            
+
             // Create script processor for PCM data
             this.scriptProcessor = this.audioContext.createScriptProcessor(4096, 1, 1);
             this.audioBuffer = [];
@@ -640,7 +640,7 @@ class ATCChat {
                 if (this.isRecording) {
                     const inputBuffer = event.inputBuffer;
                     const inputData = inputBuffer.getChannelData(0); // Float32Array
-                    
+
                     // Store the Float32Array data directly
                     // We'll convert to PCM16 when sending
                     const audioChunk = new Float32Array(inputData.length);
@@ -717,7 +717,7 @@ class ATCChat {
 
             if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
                 this.websocket.send(JSON.stringify(message));
-                
+
                 // Commit the audio buffer
                 this.websocket.send(JSON.stringify({
                     type: 'input_audio_buffer.commit'
@@ -780,7 +780,7 @@ class ATCChat {
             console.log('[ATC-Chat] No audio in queue to play');
             return;
         }
-        
+
         if (this.isPlaying) {
             console.log('[ATC-Chat] Audio already playing, skipping new audio');
             return;
@@ -793,7 +793,7 @@ class ATCChat {
             // Decode each base64 chunk individually and combine the binary data
             let totalLength = 0;
             const binaryChunks = [];
-            
+
             for (const base64Chunk of this.audioQueue) {
                 try {
                     // Clean and decode each base64 chunk
@@ -806,21 +806,21 @@ class ATCChat {
                     console.warn('[ATC-Chat] Failed to decode base64 chunk:', error);
                 }
             }
-            
+
             // Clear the queue immediately to prevent replaying
             this.audioQueue = [];
-            
+
             console.log('[ATC-Chat] Playing combined audio from', binaryChunks.length, 'chunks, total bytes:', totalLength);
-            
+
             // Combine all binary data
             let combinedBinary = '';
             for (const chunk of binaryChunks) {
                 combinedBinary += chunk;
             }
-            
+
             // Convert to PCM16 data
             const pcmData = new Int16Array(combinedBinary.length / 2);
-            
+
             for (let i = 0; i < pcmData.length; i++) {
                 const byte1 = combinedBinary.charCodeAt(i * 2);
                 const byte2 = combinedBinary.charCodeAt(i * 2 + 1);
@@ -848,7 +848,7 @@ class ATCChat {
             // Create audio buffer
             const audioBuffer = this.audioContext.createBuffer(1, pcmData.length, 24000);
             const channelData = audioBuffer.getChannelData(0);
-            
+
             // Convert Int16 to Float32 and copy to buffer
             for (let i = 0; i < pcmData.length; i++) {
                 channelData[i] = pcmData[i] / 32768.0;
@@ -857,13 +857,13 @@ class ATCChat {
             // Create buffer source and play
             const source = this.audioContext.createBufferSource();
             source.buffer = audioBuffer;
-            
+
             // Connect to both destination and analyser for visualization
             source.connect(this.audioContext.destination);
             if (this.audioAnalyser) {
                 source.connect(this.audioAnalyser);
             }
-            
+
             source.onended = () => {
                 // Add a small delay to prevent audio cutoff
                 setTimeout(() => {
@@ -894,7 +894,7 @@ class ATCChat {
     // Audio visualizer methods for AI audio
     startAIAudioVisualization() {
         if (this.aiVisualizationFrameId) return;
-        
+
         const renderFrame = () => {
             const visBar = document.getElementById('ai-vis-bar');
             if (!visBar) {
@@ -913,7 +913,7 @@ class ATCChat {
                     let totalSum = 0;
                     let totalPoints = 0;
                     const maxBin = Math.min(this.audioDataArray.length, 40);
-                    for (let j = 1; j < maxBin; j++) { 
+                    for (let j = 1; j < maxBin; j++) {
                         const weight = 1 - (j / maxBin * 0.5);
                         totalSum += this.audioDataArray[j] * weight;
                         totalPoints += weight;
@@ -934,12 +934,12 @@ class ATCChat {
             const currentWidth = parseFloat(visBar.style.width) || 0;
             const smoothingFactor = 0.3;
             const newWidth = (currentWidth * smoothingFactor) + (widthPercentage * (1 - smoothingFactor));
-            
+
             visBar.style.width = newWidth + '%';
-            
+
             this.aiVisualizationFrameId = requestAnimationFrame(renderFrame);
         };
-        
+
         this.aiVisualizationFrameId = requestAnimationFrame(renderFrame);
     }
 
@@ -948,7 +948,7 @@ class ATCChat {
             cancelAnimationFrame(this.aiVisualizationFrameId);
             this.aiVisualizationFrameId = null;
         }
-        
+
         const visBar = document.getElementById('ai-vis-bar');
         if (visBar) {
             visBar.style.width = '0%';
@@ -960,12 +960,12 @@ class ATCChat {
         this.transcriptViewerVisible = !this.transcriptViewerVisible;
         if (this.transcriptViewerVisible) {
             this.filterTranscripts();
-            
+
             // Position the transcript viewer correctly
             setTimeout(() => {
                 const aiAdvisoryElement = document.getElementById('ai-advisory-container');
                 const viewer = document.querySelector('[data-viewer-id="ai-advisory"]');
-                
+
                 if (aiAdvisoryElement && viewer) {
                     const rect = aiAdvisoryElement.getBoundingClientRect();
                     viewer.style.left = `${rect.left}px`;
@@ -989,13 +989,13 @@ class ATCChat {
             text: text
         };
         this.transcripts.push(transcript);
-        
+
         // Ensure filteredTranscripts is updated immediately
         this.filterTranscripts();
-        
+
         // Trigger Alpine.js reactivity
         this.triggerReactivity();
-        
+
         // Keep only last 100 transcripts to prevent memory issues
         if (this.transcripts.length > 100) {
             this.transcripts = this.transcripts.slice(-100);
@@ -1012,7 +1012,7 @@ class ATCChat {
         if (!this.filteredTranscripts) {
             this.filteredTranscripts = [];
         }
-        
+
         if (!this.transcriptSearchTerm || this.transcriptSearchTerm.trim() === '') {
             this.filteredTranscripts = [...this.transcripts];
         } else {
@@ -1034,7 +1034,7 @@ class ATCChat {
         if (!this.transcriptSearchTerm || this.transcriptSearchTerm.trim() === '') {
             return text;
         }
-        
+
         const searchTerm = this.transcriptSearchTerm.trim();
         const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
         return text.replace(regex, '<mark class="bg-yellow-500/30 text-yellow-200">$1</mark>');
@@ -1070,7 +1070,7 @@ document.addEventListener('alpine:init', () => {
             isAvailable: false,
             isConnected: false,
             sessionId: null,
-            
+
             async checkAvailability() {
                 try {
                     const response = await fetch(`${window.location.protocol}//${window.location.hostname}:8000/api/v1/config`);
