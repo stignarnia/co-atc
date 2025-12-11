@@ -53,13 +53,13 @@ if [ ! -f "config.toml" ]; then
     echo "⚠️  IMPORTANT: Please edit config.toml with your settings:"
     echo "   - Set your ADS-B source URL"
     echo "   - Configure your location coordinates"
-    echo "   - Add OpenAI API keys (optional)"
+    echo "   - Add OpenAI or Gemini API keys (optional) or set your preferred AI provider in the config"
     echo "   - Configure radio frequencies"
     echo ""
     echo "💡 After editing, run this script again to start the system."
     echo ""
     read -p "Press Enter to open the config file now or Ctrl+C to exit..."
-    
+
     # Try to open the config file with common editors
     if command -v nano &> /dev/null; then
         nano config.toml
@@ -104,7 +104,7 @@ if docker-compose ps | grep -q "Up"; then
     echo "✅ Co-ATC is running successfully!"
     echo ""
     echo "🌐 Opening web interface..."
-    
+
     # Try to open the web interface
     if command -v open &> /dev/null; then
         open http://localhost:8000
@@ -119,4 +119,4 @@ else
 fi
 
 echo ""
-echo "🛩️  Happy flying!" 
+echo "🛩️  Happy flying!"

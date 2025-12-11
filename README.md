@@ -17,10 +17,10 @@ Co-ATC provides air traffic controllers and aviation enthusiasts with:
 - **Real-time Aircraft Tracking**: Live visualization of aircraft positions, flight paths, and telemetry data
 - **Interactive Map Interface**: Comprehensive airspace view with aircraft details, weather overlays, and runway information
 - **Use Local Data Sources**: Connects to your ADSB and [VHF band](https://github.com/rtl-airband/RTLSDR-Airband/pull/523) SDRs for mostly local (offline) tracking
-- **AI-Powered Voice Assistant**: Voice-based ATC assistant with comprehensive airspace knowledge and real-time context (OpenAI API key required)
-- **Audio Transcription**: Real-time transcription and analysis of ATC communications using AI (OpenAI API key required)
+- **AI-Powered Voice Assistant**: Voice-based ATC assistant with comprehensive airspace knowledge and real-time context (OpenAI or Gemini API key required)
+- **Audio Transcription**: Real-time transcription and analysis of ATC communications using AI (OpenAI or Gemini API key required)
 - **Flight Phase Detection**: Automatic detection and tracking of aircraft flight phases (taxi, takeoff, departure, cruise, arrival, approach, touchdown)
-- **ATC Clearance Extraction**: AI-powered extraction and tracking of takeoff, landing, and approach clearances (OpenAI API key required)
+- **ATC Clearance Extraction**: AI-powered extraction and tracking of takeoff, landing, and approach clearances (OpenAI or Gemini API key required)
 - **Aircraft Simulation**: Create and control simulated aircraft for training and testing scenarios
 - **Weather Integration**: Live METAR, TAF, and NOTAM data integration (using "stolen" Windy APIs - sorry!)
 - **Alert System**: Real-time notifications for aircraft status changes and potential issues (incomplete)
@@ -48,7 +48,7 @@ This application is designed for local use only and should never be made accessi
 - **ADS-B Data Source** - Access to ADS-B data (e.g., local `tar1090` server or external API)
 - **FFmpeg** - Audio processing for radio frequency streams (see installation instructions below)
 - **Modern Web Browser** - Chrome, Firefox, Safari, or Edge for the web interface
-- **OpenAI API Key** - Only needed for AI Advisory, radio transcriptions, and clearance extraction
+- **OpenAI or Gemini API Key** - Only needed for AI Advisory, radio transcriptions, and clearance extraction
 
 ### Installing FFmpeg
 
@@ -180,8 +180,8 @@ nano configs/config.toml
 **Optional but Recommended:**
 - `[station]` - Configure your airport/station location (Toronto CYYZ example provided)
 - `[[frequencies.sources]]` - Add your local radio frequencies for transcription (Toronto examples provided)
-- `transcription.openai_api_key` - Enable AI transcription features (features disabled if not provided)
-- `atc_chat.openai_api_key` - Enable AI voice assistant (features disabled if not provided)
+- `transcription.openai_api_key` or `transcription.gemini_api_key` - Enable AI transcription features (features disabled if not provided)
+- `atc_chat.openai_api_key` or `atc_chat.gemini_api_key` - Enable AI voice assistant (features disabled if not provided)
 
 The configuration file contains comprehensive documentation for all settings with examples for Toronto Pearson (CYYZ). You can use these as templates for your own location and frequencies.
 
