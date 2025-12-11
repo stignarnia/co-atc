@@ -176,7 +176,7 @@ func (m *TranscriptionManager) StartTranscriptionWithExternalAudio(
 	frequencyID string,
 	frequencyName string,
 	transcribeAudio bool,
-	audioProcessor interface{},
+	audioProcessor any,
 ) error {
 	// Skip if transcription is not enabled for this frequency
 	if !transcribeAudio {

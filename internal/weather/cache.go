@@ -159,12 +159,12 @@ func (c *Cache) Invalidate() {
 }
 
 // GetStats returns cache statistics
-func (c *Cache) GetStats() map[string]interface{} {
+func (c *Cache) GetStats() map[string]any {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	data := c.cache.Get()
-	stats := map[string]interface{}{
+	stats := map[string]any{
 		"has_data":     data != nil,
 		"is_expired":   c.cache.IsExpired(),
 		"error_count":  0,

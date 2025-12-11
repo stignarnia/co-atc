@@ -359,7 +359,7 @@ func (p *PostProcessor) logProcessedTranscription(record *sqlite.TranscriptionRe
 	p.logger.Debug("Processed transcription", logger.Int64("id", record.ID))
 	p.wsServer.Broadcast(&websocket.Message{
 		Type: "transcription_update",
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"id":                record.ID,
 			"frequency_id":      record.FrequencyID,
 			"text":              record.Content,
@@ -382,7 +382,7 @@ func (p *PostProcessor) sortBatchByTimestamp(batch []TranscriptionBatch) {
 func (p *PostProcessor) broadcastClearanceEvent(clearance *sqlite.ClearanceRecord) {
 	p.wsServer.Broadcast(&websocket.Message{
 		Type: "clearance_issued",
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"id":             clearance.ID,
 			"callsign":       clearance.Callsign,
 			"clearance_type": clearance.ClearanceType,

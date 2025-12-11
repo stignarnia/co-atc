@@ -28,7 +28,7 @@ func NewClient(config WeatherConfig, logger *logger.Logger) *Client {
 }
 
 // FetchMETAR fetches METAR data for the specified airport
-func (c *Client) FetchMETAR(airportCode string) (interface{}, error) {
+func (c *Client) FetchMETAR(airportCode string) (any, error) {
 	// New API: AviationWeather.gov
 	url := fmt.Sprintf("%s/metar?ids=%s&format=json", c.config.APIBaseURL, airportCode)
 
@@ -47,7 +47,7 @@ func (c *Client) FetchMETAR(airportCode string) (interface{}, error) {
 }
 
 // FetchTAF fetches TAF data for the specified airport
-func (c *Client) FetchTAF(airportCode string) (interface{}, error) {
+func (c *Client) FetchTAF(airportCode string) (any, error) {
 	// Use config base URL and AviationWeather query format
 	url := fmt.Sprintf("%s/taf?ids=%s&format=json", c.config.APIBaseURL, airportCode)
 	var result []TAFResponse
@@ -62,16 +62,16 @@ func (c *Client) FetchTAF(airportCode string) (interface{}, error) {
 }
 
 // FetchNOTAMs fetches NOTAM data for the specified airport
-func (c *Client) FetchNOTAMs(airportCode string) (interface{}, error) {
+func (c *Client) FetchNOTAMs(airportCode string) (any, error) {
 	// Use configured API for NOTAMs (default: Windy)
 	url := fmt.Sprintf("%s/%s", c.config.NOTAMsBaseURL, airportCode)
-	var data interface{}
+	var data any
 	err := c.fetchWithRetry(url, WeatherTypeNOTAMs, airportCode, &data)
 	return data, err
 }
 
 // fetchWithRetry performs HTTP request with retry logic and exponential backoff
-func (c *Client) fetchWithRetry(url string, weatherType WeatherType, airportCode string, target interface{}) error {
+func (c *Client) fetchWithRetry(url string, weatherType WeatherType, airportCode string, target any) error {
 	var lastErr error
 
 	// Try to fetch with retries

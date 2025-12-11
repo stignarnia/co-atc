@@ -109,8 +109,8 @@ type SimulationService interface {
 	UpdatePositions()
 	GenerateADSBData() []ADSBTarget
 	IsSimulated(hex string) bool
-	GetAllAircraft() interface{}                // Returns simulation aircraft data
-	GetAircraft(hex string) (interface{}, bool) // Returns specific simulated aircraft
+	GetAllAircraft() any                // Returns simulation aircraft data
+	GetAircraft(hex string) (any, bool) // Returns specific simulated aircraft
 }
 
 // Service is the main service for ADS-B data processing
@@ -290,7 +290,7 @@ func (s *Service) broadcastAircraftChange(change AircraftChange) {
 		messageType = "aircraft_removed"
 	}
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"type": change.Type,
 		"hex":  change.Hex,
 	}
@@ -594,7 +594,7 @@ func (s *Service) sendPhaseChangeAlertWithEvent(aircraft *Aircraft, fromPhase, t
 
 		s.wsServer.Broadcast(&websocket.Message{
 			Type: "phase_change",
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"alert": alert,
 			},
 		})
@@ -922,7 +922,7 @@ func (s *Service) GetFilteredAircraftSimple(minAltitude, maxAltitude float64, st
 }
 
 // HandleBulkRequest processes client requests for bulk aircraft data
-func (s *Service) HandleBulkRequest(filters map[string]interface{}) (*AircraftBulkResponse, error) {
+func (s *Service) HandleBulkRequest(filters map[string]any) (*AircraftBulkResponse, error) {
 	// Parse filters from the request
 	minAltitude := 0.0
 	maxAltitude := 60000.0
@@ -940,7 +940,7 @@ func (s *Service) HandleBulkRequest(filters map[string]interface{}) (*AircraftBu
 	if val, ok := filters["max_altitude"].(float64); ok {
 		maxAltitude = val
 	}
-	if val, ok := filters["status"].([]interface{}); ok {
+	if val, ok := filters["status"].([]any); ok {
 		for _, s := range val {
 			if str, ok := s.(string); ok {
 				status = append(status, str)
@@ -959,7 +959,7 @@ func (s *Service) HandleBulkRequest(filters map[string]interface{}) (*AircraftBu
 	if val, ok := filters["show_ground"].(bool); ok {
 		showGround = val
 	}
-	if val, ok := filters["phases"].([]interface{}); ok {
+	if val, ok := filters["phases"].([]any); ok {
 		for _, p := range val {
 			if str, ok := p.(string); ok {
 				phases = append(phases, str)
@@ -1220,7 +1220,7 @@ func (s *Service) updateAircraftStatus(activeAircraft map[string]bool) {
 				// For other status changes, always send the message
 				if newStatus != "signal_lost" || !aircraft.OnGround {
 					// Create message data
-					data := map[string]interface{}{
+					data := map[string]any{
 						"hex":                  aircraft.Hex,
 						"flight":               aircraft.Flight,
 						"new_status":           newStatus,
@@ -1926,7 +1926,7 @@ func (s *Service) sendPhaseChangeAlerts(phaseChanges []PhaseChangeInsert, curren
 		// Send WebSocket message for phase change
 		if s.wsServer != nil {
 			// Create message data for phase change
-			data := map[string]interface{}{
+			data := map[string]any{
 				"hex":        aircraft.Hex,
 				"flight":     aircraft.Flight,
 				"phase":      change.Phase,
@@ -1998,7 +1998,7 @@ func (s *Service) sendImmediateGroundTransitionAlerts(phaseChanges []PhaseChange
 			// Send phase change message first
 			if s.wsServer != nil {
 				// Send phase_change message
-				phaseData := map[string]interface{}{
+				phaseData := map[string]any{
 					"hex":        aircraft.Hex,
 					"flight":     aircraft.Flight,
 					"phase":      change.Phase,
@@ -2028,7 +2028,7 @@ func (s *Service) sendImmediateGroundTransitionAlerts(phaseChanges []PhaseChange
 			// Send phase change message first
 			if s.wsServer != nil {
 				// Send phase_change message
-				phaseData := map[string]interface{}{
+				phaseData := map[string]any{
 					"hex":        aircraft.Hex,
 					"flight":     aircraft.Flight,
 					"phase":      change.Phase,
@@ -2324,7 +2324,7 @@ func (s *Service) ProcessRawData(rawData *RawAircraftData) []*Aircraft {
 			// Send WebSocket message for new aircraft
 			if s.wsServer != nil {
 				// Create message data
-				data := map[string]interface{}{
+				data := map[string]any{
 					"hex":        a.Hex,
 					"flight":     a.Flight,
 					"altitude":   a.ADSB.AltBaro,

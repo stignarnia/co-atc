@@ -22,7 +22,7 @@ func NewWebSocketHandler(service *Service, logger *logger.Logger) *WebSocketHand
 }
 
 // HandleMessage handles incoming WebSocket messages
-func (h *WebSocketHandler) HandleMessage(client *websocket.Client, messageType string, data map[string]interface{}) error {
+func (h *WebSocketHandler) HandleMessage(client *websocket.Client, messageType string, data map[string]any) error {
 	switch messageType {
 	case websocket.MessageTypeAircraftBulkRequest:
 		return h.handleBulkRequest(client, data)
@@ -35,12 +35,12 @@ func (h *WebSocketHandler) HandleMessage(client *websocket.Client, messageType s
 }
 
 // handleBulkRequest processes requests for bulk aircraft data
-func (h *WebSocketHandler) handleBulkRequest(client *websocket.Client, data map[string]interface{}) error {
+func (h *WebSocketHandler) handleBulkRequest(client *websocket.Client, data map[string]any) error {
 	h.logger.Debug("Handling bulk aircraft data request")
 
 	// Parse filters from the request
-	filters := make(map[string]interface{})
-	if filtersData, ok := data["filters"].(map[string]interface{}); ok {
+	filters := make(map[string]any)
+	if filtersData, ok := data["filters"].(map[string]any); ok {
 		filters = filtersData
 	}
 
@@ -54,7 +54,7 @@ func (h *WebSocketHandler) handleBulkRequest(client *websocket.Client, data map[
 	// Send response back to client
 	message := &websocket.Message{
 		Type: websocket.MessageTypeAircraftBulkResponse,
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"aircraft": response.Aircraft,
 			"count":    response.Count,
 			"counts":   response.Counts,
@@ -66,7 +66,7 @@ func (h *WebSocketHandler) handleBulkRequest(client *websocket.Client, data map[
 }
 
 // handleFilterUpdate processes filter update messages from clients
-func (h *WebSocketHandler) handleFilterUpdate(client *websocket.Client, data map[string]interface{}) error {
+func (h *WebSocketHandler) handleFilterUpdate(client *websocket.Client, data map[string]any) error {
 	h.logger.Debug("Handling filter update request")
 
 	// Parse filter data
@@ -80,7 +80,7 @@ func (h *WebSocketHandler) handleFilterUpdate(client *websocket.Client, data map
 		filters.ShowGround = showGround
 	}
 
-	if phases, ok := data["phases"].(map[string]interface{}); ok {
+	if phases, ok := data["phases"].(map[string]any); ok {
 		filters.Phases = make(map[string]bool)
 		for phase, enabled := range phases {
 			if enabledBool, ok := enabled.(bool); ok {
@@ -103,7 +103,7 @@ func (h *WebSocketHandler) handleFilterUpdate(client *websocket.Client, data map
 		logger.Int("phase_count", len(filters.Phases)))
 
 	// Convert filters to service format and get filtered aircraft
-	serviceFilters := make(map[string]interface{})
+	serviceFilters := make(map[string]any)
 	serviceFilters["show_air"] = filters.ShowAir
 	serviceFilters["show_ground"] = filters.ShowGround
 
@@ -142,7 +142,7 @@ func (h *WebSocketHandler) handleFilterUpdate(client *websocket.Client, data map
 	// Send filtered aircraft data back to client
 	message := &websocket.Message{
 		Type: "aircraft_bulk_response",
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"aircraft": response.Aircraft,
 			"count":    response.Count,
 			"counts":   response.Counts,

@@ -32,7 +32,7 @@ func (h *Handler) GetAllTranscriptions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create response
-	response := map[string]interface{}{
+	response := map[string]any{
 		"timestamp":      time.Now(),
 		"count":          len(transcriptions),
 		"transcriptions": transcriptions,
@@ -63,7 +63,7 @@ func (h *Handler) GetTranscriptionsByFrequency(w http.ResponseWriter, r *http.Re
 	}
 
 	// Create response
-	response := map[string]interface{}{
+	response := map[string]any{
 		"timestamp":      time.Now(),
 		"frequency_id":   id,
 		"count":          len(transcriptions),
@@ -95,7 +95,7 @@ func (h *Handler) GetTranscriptionsByTimeRange(w http.ResponseWriter, r *http.Re
 	}
 
 	// Create response
-	response := map[string]interface{}{
+	response := map[string]any{
 		"timestamp":      time.Now(),
 		"start_time":     startTime,
 		"end_time":       endTime,
@@ -134,7 +134,7 @@ func (h *Handler) GetTranscriptionsBySpeaker(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Create response
-	response := map[string]interface{}{
+	response := map[string]any{
 		"timestamp":      time.Now(),
 		"speaker_type":   speakerType,
 		"count":          len(transcriptions),
@@ -166,7 +166,7 @@ func (h *Handler) GetTranscriptionsByCallsign(w http.ResponseWriter, r *http.Req
 	}
 
 	// Create response
-	response := map[string]interface{}{
+	response := map[string]any{
 		"timestamp":      time.Now(),
 		"callsign":       callsign,
 		"count":          len(transcriptions),

@@ -112,7 +112,7 @@ func (s *Service) RemoveAircraft(hex string) error {
 }
 
 // GetAircraft returns a simulated aircraft by hex code
-func (s *Service) GetAircraft(hex string) (interface{}, bool) {
+func (s *Service) GetAircraft(hex string) (any, bool) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 
@@ -121,7 +121,7 @@ func (s *Service) GetAircraft(hex string) (interface{}, bool) {
 }
 
 // GetAllAircraft returns all simulated aircraft
-func (s *Service) GetAllAircraft() interface{} {
+func (s *Service) GetAllAircraft() any {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 

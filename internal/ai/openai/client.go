@@ -234,8 +234,8 @@ func (c *Client) CreateTranscriptionSession(ctx context.Context, config ai.Trans
 	reqBody := struct {
 		InputAudioFormat         string                   `json:"input_audio_format"`
 		InputAudioTranscription  *InputAudioTranscription `json:"input_audio_transcription"`
-		InputAudioNoiseReduction interface{}              `json:"input_audio_noise_reduction,omitempty"`
-		TurnDetection            interface{}              `json:"turn_detection,omitempty"`
+		InputAudioNoiseReduction any                      `json:"input_audio_noise_reduction,omitempty"`
+		TurnDetection            any                      `json:"turn_detection,omitempty"`
 	}{
 		InputAudioFormat: "pcm16",
 		InputAudioTranscription: &InputAudioTranscription{

@@ -8,7 +8,7 @@ import (
 
 // FlexibleField can hold either a string or a number
 type FlexibleField struct {
-	value interface{}
+	value any
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling for FlexibleField

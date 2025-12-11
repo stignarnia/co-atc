@@ -258,7 +258,7 @@ func (s *Service) RefreshNow() {
 }
 
 // GetCacheStats returns cache statistics
-func (s *Service) GetCacheStats() map[string]interface{} {
+func (s *Service) GetCacheStats() map[string]any {
 	return s.cache.GetStats()
 }
 

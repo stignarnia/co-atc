@@ -465,7 +465,7 @@ func (h *Handler) GetAircraftTracks(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	lastFetch, status := h.adsbService.GetStatus()
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"status":         status,
 		"last_fetch":     lastFetch,
 		"aircraft_count": len(h.adsbService.GetAllAircraft()),
@@ -477,21 +477,21 @@ func (h *Handler) GetHealth(w http.ResponseWriter, r *http.Request) {
 // GetConfig returns the public configuration
 func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	// Create a sanitized config with only public values
-	publicConfig := map[string]interface{}{
-		"adsb": map[string]interface{}{
+	publicConfig := map[string]any{
+		"adsb": map[string]any{
 			"fetch_interval_seconds":     h.config.ADSB.FetchIntervalSecs,
 			"websocket_aircraft_updates": h.config.ADSB.WebSocketAircraftUpdates,
 		},
-		"storage": map[string]interface{}{
+		"storage": map[string]any{
 			"sqlite_base_path":     h.config.Storage.SQLiteBasePath,
 			"max_positions_in_api": h.config.Storage.MaxPositionsInAPI,
 		},
-		"frequencies": map[string]interface{}{
+		"frequencies": map[string]any{
 			"buffer_size_kb":          h.config.Frequencies.BufferSizeKB,
 			"stream_timeout_secs":     h.config.Frequencies.StreamTimeoutSecs,
 			"reconnect_interval_secs": h.config.Frequencies.ReconnectIntervalSecs,
 		},
-		"atc_chat": map[string]interface{}{
+		"atc_chat": map[string]any{
 			"enabled": h.config.ATCChat.Enabled,
 		},
 	}
@@ -505,12 +505,12 @@ func (h *Handler) GetStationConfig(w http.ResponseWriter, r *http.Request) {
 	effectiveLat, effectiveLon := h.adsbService.GetEffectiveStationCoords()
 
 	stationCfg := struct {
-		Latitude      float64     `json:"latitude"`
-		Longitude     float64     `json:"longitude"`
-		ElevationFeet int         `json:"elevation_feet"`
-		AirportCode   string      `json:"airport_code"`
-		Runways       interface{} `json:"runways,omitempty"`
-		FetchErrors   []string    `json:"fetch_errors,omitempty"`
+		Latitude      float64  `json:"latitude"`
+		Longitude     float64  `json:"longitude"`
+		ElevationFeet int      `json:"elevation_feet"`
+		AirportCode   string   `json:"airport_code"`
+		Runways       any      `json:"runways,omitempty"`
+		FetchErrors   []string `json:"fetch_errors,omitempty"`
 		// Weather configuration flags
 		FetchMETAR  bool `json:"fetch_metar"`
 		FetchTAF    bool `json:"fetch_taf"`
@@ -543,7 +543,7 @@ func (h *Handler) GetStationConfig(w http.ResponseWriter, r *http.Request) {
 			fetchErrors = append(fetchErrors, fmt.Sprintf("Runways: %s", err.Error()))
 
 			// Set empty object instead of null for better client handling
-			stationCfg.Runways = map[string]interface{}{}
+			stationCfg.Runways = map[string]any{}
 		}
 	}
 
@@ -627,11 +627,11 @@ func (h *Handler) GetWeatherData(w http.ResponseWriter, r *http.Request) {
 	if h.weatherService == nil {
 		// Weather service not available
 		weatherData := struct {
-			METAR       interface{} `json:"metar,omitempty"`
-			TAF         interface{} `json:"taf,omitempty"`
-			NOTAMs      interface{} `json:"notams,omitempty"`
-			LastUpdated string      `json:"last_updated"`
-			FetchErrors []string    `json:"fetch_errors,omitempty"`
+			METAR       any      `json:"metar,omitempty"`
+			TAF         any      `json:"taf,omitempty"`
+			NOTAMs      any      `json:"notams,omitempty"`
+			LastUpdated string   `json:"last_updated"`
+			FetchErrors []string `json:"fetch_errors,omitempty"`
 		}{
 			LastUpdated: time.Now().Format(time.RFC3339),
 			FetchErrors: []string{"Weather service not available"},
@@ -646,7 +646,7 @@ func (h *Handler) GetWeatherData(w http.ResponseWriter, r *http.Request) {
 }
 
 // fetchRunwayData loads runway data from the specified file and calculates extended centerlines
-func (h *Handler) fetchRunwayData(filePath string) (interface{}, error) {
+func (h *Handler) fetchRunwayData(filePath string) (any, error) {
 	// Read the runway data file
 	f, err := os.Open(filePath)
 	if err != nil {
@@ -864,7 +864,7 @@ func (h *Handler) GetAllFrequencies(w http.ResponseWriter, r *http.Request) {
 	frequencies := h.frequenciesService.GetAllFrequencies()
 
 	// Create response
-	response := map[string]interface{}{
+	response := map[string]any{
 		"timestamp":   time.Now().UTC(), // Use UTC for response timestamp
 		"count":       len(frequencies),
 		"frequencies": frequencies,
@@ -1234,7 +1234,7 @@ func (h *Handler) getFlightCoordinates(flight string) (float64, float64, error) 
 }
 
 // WriteJSON writes a JSON response
-func WriteJSON(w http.ResponseWriter, status int, data interface{}) {
+func WriteJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
@@ -1377,7 +1377,7 @@ func (h *Handler) GetATCChatSessions(w http.ResponseWriter, r *http.Request) {
 
 	sessions := h.atcChatService.ListActiveSessions()
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"sessions": sessions,
 		"count":    len(sessions),
 		"status":   "success",
@@ -1448,7 +1448,7 @@ func (h *Handler) UpdateATCChatSessionContext(w http.ResponseWriter, r *http.Req
 
 	// Return success response with the actual instructions sent to AI and individual variables
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"status":        "success",
 		"message":       "Session context updated with fresh airspace data",
 		"instructions":  promptWithVars.Prompt,
@@ -1546,7 +1546,7 @@ func (h *Handler) CreateSimulatedAircraft(w http.ResponseWriter, r *http.Request
 		logger.String("flight", aircraft.Flight))
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"status":   "success",
 		"aircraft": aircraft,
 	})
@@ -1600,7 +1600,7 @@ func (h *Handler) UpdateSimulationControls(w http.ResponseWriter, r *http.Reques
 		logger.Float64("vertical_rate", req.VerticalRate))
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"status": "success",
 	})
 }
@@ -1623,7 +1623,7 @@ func (h *Handler) RemoveSimulatedAircraft(w http.ResponseWriter, r *http.Request
 		logger.String("hex", hex))
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"status": "success",
 	})
 }

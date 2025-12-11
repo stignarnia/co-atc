@@ -241,7 +241,7 @@ func (e *Engine) ClearCache() {
 }
 
 // GetCacheStats returns statistics about the template cache
-func (e *Engine) GetCacheStats() map[string]interface{} {
+func (e *Engine) GetCacheStats() map[string]any {
 	e.cacheMutex.RLock()
 	defer e.cacheMutex.RUnlock()
 
@@ -250,7 +250,7 @@ func (e *Engine) GetCacheStats() map[string]interface{} {
 		templates = append(templates, path)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"cached_template_count": len(e.templateCache),
 		"cached_templates":      templates,
 	}

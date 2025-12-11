@@ -28,12 +28,12 @@ type Message struct {
 
 // AircraftBulkRequest represents client request for bulk aircraft data
 type AircraftBulkRequest struct {
-	Filters map[string]interface{} `json:"filters"` // Filter parameters
+	Filters map[string]any `json:"filters"` // Filter parameters
 }
 
 // MessageHandler defines the interface for handling incoming WebSocket messages
 type MessageHandler interface {
-	HandleMessage(client *Client, messageType string, data map[string]interface{}) error
+	HandleMessage(client *Client, messageType string, data map[string]any) error
 }
 
 // ClientFilters represents the active filters for a WebSocket client
@@ -248,8 +248,8 @@ func (c *Client) readPump() {
 
 		// Parse incoming message
 		var message struct {
-			Type string                 `json:"type"`
-			Data map[string]interface{} `json:"data"`
+			Type string         `json:"type"`
+			Data map[string]any `json:"data"`
 		}
 
 		if err := json.Unmarshal(messageBytes, &message); err != nil {
@@ -393,7 +393,7 @@ func (c *Client) GetFilters() *ClientFilters {
 }
 
 // MatchesFilters checks if an aircraft matches the client's active filters
-func (c *Client) MatchesFilters(aircraft map[string]interface{}) bool {
+func (c *Client) MatchesFilters(aircraft map[string]any) bool {
 	filters := c.GetFilters()
 	if filters == nil {
 		// No filters set, show everything
@@ -448,8 +448,8 @@ func (c *Client) MatchesFilters(aircraft map[string]interface{}) bool {
 
 		// Get current phase from aircraft
 		var currentPhase string
-		if phaseData, ok := aircraft["phase_data"].(map[string]interface{}); ok {
-			if current, ok := phaseData["current"].(map[string]interface{}); ok {
+		if phaseData, ok := aircraft["phase_data"].(map[string]any); ok {
+			if current, ok := phaseData["current"].(map[string]any); ok {
 				if phase, ok := current["phase"].(string); ok {
 					currentPhase = phase
 				}
@@ -486,11 +486,11 @@ func (s *Server) shouldSendToClient(client *Client, message *Message) bool {
 
 	// For aircraft messages, check if the aircraft matches client filters
 	if aircraftData, exists := message.Data["aircraft"]; exists {
-		// Convert aircraft data to map[string]interface{} for filtering
-		var data map[string]interface{}
+		// Convert aircraft data to map[string]any for filtering
+		var data map[string]any
 
 		// Try direct type assertion first
-		if directMap, ok := aircraftData.(map[string]interface{}); ok {
+		if directMap, ok := aircraftData.(map[string]any); ok {
 			data = directMap
 		} else {
 			// Convert struct to map using JSON marshaling/unmarshaling
@@ -521,7 +521,7 @@ func (s *Server) shouldSendToClient(client *Client, message *Message) bool {
 }
 
 // Helper function to get map keys for debugging
-func getMapKeys(m map[string]interface{}) []string {
+func getMapKeys(m map[string]any) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

@@ -443,7 +443,7 @@ func (s *AircraftStorage) getLatestADSBDataBatch(hexCodes []string) (map[string]
 
 	// Create placeholders for the IN clause
 	placeholders := make([]string, len(hexCodes))
-	args := make([]interface{}, len(hexCodes))
+	args := make([]any, len(hexCodes))
 	for i, hex := range hexCodes {
 		placeholders[i] = "?"
 		args[i] = hex
@@ -517,7 +517,7 @@ func (s *AircraftStorage) getRecentPhaseHistoryBatch(hexCodes []string, limit in
 
 	// Create placeholders for the IN clause
 	placeholders := make([]string, len(hexCodes))
-	args := make([]interface{}, len(hexCodes)+1)
+	args := make([]any, len(hexCodes)+1)
 	for i, hex := range hexCodes {
 		placeholders[i] = "?"
 		args[i] = hex
@@ -1182,7 +1182,7 @@ func (s *AircraftStorage) GetFiltered(
 		WHERE 1=1`
 
 	// Create a slice to hold query arguments
-	args := []interface{}{}
+	args := []any{}
 
 	// Add status filter if provided
 	if len(status) > 0 {
@@ -1287,7 +1287,7 @@ func boolToInt(b bool) int {
 }
 
 // formatNullableTime formats a nullable time.Time for SQL
-func formatNullableTime(t *time.Time) interface{} {
+func formatNullableTime(t *time.Time) any {
 	if t == nil {
 		return nil
 	}
@@ -1601,7 +1601,7 @@ func (s *AircraftStorage) GetCurrentPhasesBatch(hexCodes []string) (map[string]*
 
 	// Create placeholders for the IN clause
 	placeholders := make([]string, len(hexCodes))
-	args := make([]interface{}, len(hexCodes))
+	args := make([]any, len(hexCodes))
 	for i, hex := range hexCodes {
 		placeholders[i] = "?"
 		args[i] = hex
@@ -1663,7 +1663,7 @@ func (s *AircraftStorage) GetLatestADSBTargetIDsBatch(hexCodes []string) (map[st
 
 	// Create placeholders for the IN clause
 	placeholders := make([]string, len(hexCodes))
-	args := make([]interface{}, len(hexCodes))
+	args := make([]any, len(hexCodes))
 	for i, hex := range hexCodes {
 		placeholders[i] = "?"
 		args[i] = hex

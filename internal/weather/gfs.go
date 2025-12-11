@@ -126,7 +126,7 @@ func (c *GFSClient) FetchRegionalGrid(centerLat, centerLon float64) error {
 
 	// 5. Parse Response
 	// Open-Meteo returns a JSON Array of objects for multi-point requests
-	var results []map[string]interface{}
+	var results []map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
 		return err
 	}
@@ -141,16 +141,16 @@ func (c *GFSClient) FetchRegionalGrid(centerLat, centerLon float64) error {
 }
 
 // parseGridResponse parses the array of results into the 4D GFSGrid
-func (c *GFSClient) parseGridResponse(results []map[string]interface{}, lats, lons []float64, levels []int) {
+func (c *GFSClient) parseGridResponse(results []map[string]any, lats, lons []float64, levels []int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	// Extract times from the first result (assuming they are consistent across all points)
 	var times []time.Time
 	if len(results) > 0 {
-		hourly, ok := results[0]["hourly"].(map[string]interface{})
+		hourly, ok := results[0]["hourly"].(map[string]any)
 		if ok {
-			if timeStrs, ok := hourly["time"].([]interface{}); ok {
+			if timeStrs, ok := hourly["time"].([]any); ok {
 				for _, t := range timeStrs {
 					if ts, ok := t.(string); ok {
 						// Open-Meteo format: "2023-12-09T14:00"
@@ -210,7 +210,7 @@ func (c *GFSClient) parseGridResponse(results []map[string]interface{}, lats, lo
 	for latIdx := range lats {
 		for lonIdx := range lons {
 			data := results[resultIdx]
-			hourly, ok := data["hourly"].(map[string]interface{})
+			hourly, ok := data["hourly"].(map[string]any)
 			if ok {
 				for t := 0; t < timeCount; t++ {
 					for lvlIdx, lvl := range levels {
@@ -248,8 +248,8 @@ func (c *GFSClient) parseGridResponse(results []map[string]interface{}, lats, lo
 	)
 }
 
-func extractValue(hourly map[string]interface{}, key string, idx int) float64 {
-	if arr, ok := hourly[key].([]interface{}); ok && len(arr) > idx {
+func extractValue(hourly map[string]any, key string, idx int) float64 {
+	if arr, ok := hourly[key].([]any); ok && len(arr) > idx {
 		if val, ok := arr[idx].(float64); ok {
 			return val
 		}

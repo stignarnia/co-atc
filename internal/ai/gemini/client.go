@@ -371,22 +371,22 @@ func (c *Client) ConnectTranscriptionSession(ctx context.Context, session *ai.Tr
 		model = "models/" + model
 	}
 
-	setupMsg := map[string]interface{}{
-		"setup": map[string]interface{}{
+	setupMsg := map[string]any{
+		"setup": map[string]any{
 			"model": model,
-			"generation_config": map[string]interface{}{
+			"generation_config": map[string]any{
 				"response_modalities": []string{"TEXT"},
 			},
-			"system_instruction": map[string]interface{}{
-				"parts": []map[string]interface{}{
+			"system_instruction": map[string]any{
+				"parts": []map[string]any{
 					{"text": "You are a transcriber. Transcribe the audio exactly. Do not add anything else."},
 				},
 			},
 		},
 	}
 	if session.Config.Prompt != "" {
-		setupMsg["setup"].(map[string]interface{})["system_instruction"] = map[string]interface{}{
-			"parts": []map[string]interface{}{
+		setupMsg["setup"].(map[string]any)["system_instruction"] = map[string]any{
+			"parts": []map[string]any{
 				{"text": session.Config.Prompt},
 			},
 		}

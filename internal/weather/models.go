@@ -9,7 +9,7 @@ import (
 type WeatherData struct {
 	METAR       *METARResponse `json:"metar,omitempty"`
 	TAF         *TAFResponse   `json:"taf,omitempty"`
-	NOTAMs      interface{}    `json:"notams,omitempty"`
+	NOTAMs      any            `json:"notams,omitempty"`
 	LastUpdated time.Time      `json:"last_updated"`
 	FetchErrors []string       `json:"fetch_errors,omitempty"`
 }
@@ -55,7 +55,7 @@ const (
 // FetchResult represents the result of fetching weather data
 type FetchResult struct {
 	Type WeatherType
-	Data interface{}
+	Data any
 	Err  error
 }
 

@@ -88,7 +88,7 @@ func (s *Service) ClearCache() {
 }
 
 // GetCacheStats returns statistics about the template cache
-func (s *Service) GetCacheStats() map[string]interface{} {
+func (s *Service) GetCacheStats() map[string]any {
 	return s.engine.GetCacheStats()
 }
 

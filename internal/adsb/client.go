@@ -301,14 +301,14 @@ func (c *Client) fetchOpenSkyData(ctx context.Context) (*RawAircraftData, error)
 				return nil, fmt.Errorf("failed to read opensky credentials: %w", err)
 			}
 
-			var credMap map[string]interface{}
+			var credMap map[string]any
 			if err := json.Unmarshal(b, &credMap); err != nil {
 				c.logger.Error("Failed to parse OpenSky credentials JSON", logger.Error(err))
 				return nil, fmt.Errorf("invalid opensky credentials JSON: %w", err)
 			}
 
 			// Helper to pick first present non-empty string value from multiple possible keys.
-			getFirstString := func(m map[string]interface{}, keys ...string) string {
+			getFirstString := func(m map[string]any, keys ...string) string {
 				for _, k := range keys {
 					if v, ok := m[k]; ok {
 						switch vv := v.(type) {
@@ -435,8 +435,8 @@ func (c *Client) fetchOpenSkyData(ctx context.Context) (*RawAircraftData, error)
 	}
 
 	var osResp struct {
-		Time   int64           `json:"time"`
-		States [][]interface{} `json:"states"`
+		Time   int64   `json:"time"`
+		States [][]any `json:"states"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&osResp); err != nil {
 		c.logger.Error("Failed to decode OpenSky response", logger.Error(err))
