@@ -47,6 +47,10 @@ source_type = "local"
 # URL to the aircraft.json file from your local ADS-B receiver (tar1090)
 local_source_url = "http://192.168.1.166/tar1090/data/aircraft.json"
 
+# External ADS-B provider configuration (used when source_type = "external-adsbexchangelike")
+# URL template with format placeholders for latitude, longitude, and distance (preserves previous behavior)
+external_source_url = "https://api.adsb.lol/v2/lat/%f/lon/%f/dist/%.0f/"
+
 # API authentication for external source, if it doesn't use it (like adsb.lol), leave both empty
 api_host = "adsbexchange-com1.p.rapidapi.com"
 api_key = ""  # Replace with your actual API key
