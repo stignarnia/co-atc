@@ -120,18 +120,7 @@ type ConfigWeatherConfig struct {
 
 // FromConfigWeatherConfig converts a config.WeatherConfig to weather.WeatherConfig
 func FromConfigWeatherConfig(cfg ConfigWeatherConfig) WeatherConfig {
-	return WeatherConfig{
-		RefreshIntervalMinutes: cfg.RefreshIntervalMinutes,
-		APIBaseURL:             cfg.APIBaseURL,
-		RequestTimeoutSeconds:  cfg.RequestTimeoutSeconds,
-		MaxRetries:             cfg.MaxRetries,
-		FetchMETAR:             cfg.FetchMETAR,
-		FetchTAF:               cfg.FetchTAF,
-		FetchNOTAMs:            cfg.FetchNOTAMs,
-		NOTAMsBaseURL:          cfg.NOTAMsBaseURL,
-		CacheExpiryMinutes:     cfg.CacheExpiryMinutes,
-		GFS:                    cfg.GFS,
-	}
+	return WeatherConfig(cfg)
 }
 
 // DefaultGFSConfig returns the default GFS configuration

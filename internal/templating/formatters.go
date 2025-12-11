@@ -67,7 +67,7 @@ func formatAirborneAircraft(ac *adsb.Aircraft, airport AirportInfo) string {
 		callsign = "Unknown"
 	}
 
-	builder.WriteString(fmt.Sprintf("%s", callsign))
+	builder.WriteString(callsign)
 
 	// Operator from ADSB data
 	if ac.Airline != "" {
@@ -167,7 +167,7 @@ func formatGroundAircraft(ac *adsb.Aircraft, airport AirportInfo) string {
 		callsign = "Unknown"
 	}
 
-	builder.WriteString(fmt.Sprintf("%s", callsign))
+	builder.WriteString(callsign)
 
 	// Operator from ADSB data
 	if ac.Airline != "" {

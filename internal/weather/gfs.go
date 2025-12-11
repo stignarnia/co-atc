@@ -207,8 +207,8 @@ func (c *GFSClient) parseGridResponse(results []map[string]interface{}, lats, lo
 	// (lat1, lon0), ...
 	resultIdx := 0
 
-	for latIdx, _ := range lats {
-		for lonIdx, _ := range lons {
+	for latIdx := range lats {
+		for lonIdx := range lons {
 			data := results[resultIdx]
 			hourly, ok := data["hourly"].(map[string]interface{})
 			if ok {

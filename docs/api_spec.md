@@ -547,7 +547,7 @@ WebSocket endpoint for ATC chat audio streaming.
 
 **WebSocket Message Types:**
 - `connection_ready`: Client connection established
-- `openai_ready`: OpenAI connection established
+- `provider_ready`: AI provider connection established
 - `connection_error`: Connection error occurred
 - `session.update`: Session context updated
 - `response.audio.delta`: Audio response chunk

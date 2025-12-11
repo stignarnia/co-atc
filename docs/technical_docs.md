@@ -48,7 +48,7 @@ co-atc/
 │   │   └── transcription_handlers.go # Transcription handlers
 │   ├── atcchat/              # ATC Chat AI assistant
 │   │   ├── models.go         # Chat data models
-│   │   ├── realtime_client.go # OpenAI realtime API client
+│   │   ├── realtime_client.go # Realtime provider client (OpenAI/Gemini adapters)
 │   │   └── service.go        # Chat service implementation
 │   ├── audio/                # Audio processing
 │   │   ├── central_processor.go # Unified audio processing
@@ -75,13 +75,13 @@ co-atc/
 │   │   ├── formatters.go     # Data formatters
 │   │   ├── models.go         # Template models
 │   │   └── templating.go     # Template utilities
-│   ├── transcription/        # Audio transcription
-│   │   ├── interface.go      # Transcription interfaces
-│   │   ├── manager.go        # Transcription management
-│   │   ├── models.go         # Transcription data models
-│   │   ├── openai.go         # OpenAI API integration
-│   │   ├── post_processor.go # LLM-based post-processing
-│   │   └── processor.go      # Transcription processing
+│   │   ├── transcription/        # Audio transcription
+│   │   │   ├── interface.go      # Transcription interfaces
+│   │   │   ├── manager.go        # Transcription management
+│   │   │   ├── models.go         # Transcription data models
+│   │   │   ├── openai.go         # OpenAI implementation for transcription (provider-agnostic design; Gemini adapter available in internal/ai/gemini)
+│   │   │   ├── post_processor.go # LLM-based post-processing
+│   │   │   └── processor.go      # Transcription processing
 │   ├── weather/              # Weather data integration
 │   │   ├── cache.go          # Weather data caching
 │   │   ├── client.go         # Weather API client
@@ -161,16 +161,16 @@ Co-ATC uses several background workers and goroutines to handle concurrent opera
 - **Location**: `internal/transcription/processor.go`, `internal/transcription/manager.go`
 - **Purpose**: Transcribes ATC communications in real-time
 - **Workers**:
-  - processAudio: Reads audio data, chunks it, and sends to OpenAI
-  - processTranscriptions: Receives and processes transcription events from OpenAI
-  - Handles reconnection to OpenAI services when connections fail
+  - processAudio: Reads audio data, chunks it, and sends to the configured transcription provider (OpenAI/Gemini)
+  - processTranscriptions: Receives and processes transcription events from the configured provider
+  - Handles reconnection to the configured transcription provider when connections fail
 
 ### 6. Post-Processing
 - **Location**: `internal/transcription/post_processor.go`
 - **Purpose**: Enhances raw transcriptions with LLM processing
 - **Workers**:
   - Background processing loop: Periodically processes batches of unprocessed transcriptions
-  - Uses OpenAI to identify speakers, clean up content, and extract callsigns
+  - Uses the configured AI provider (OpenAI or Gemini) to identify speakers, clean up content, and extract callsigns
   - Includes active aircraft data from the database as context for better processing
   - Broadcasts processed transcriptions via WebSocket
 
@@ -201,7 +201,7 @@ Co-ATC uses several background workers and goroutines to handle concurrent opera
 
 ### 2. Transcription System
 - `transcription/processor.go`: Processes audio for transcription
-- `transcription/openai.go`: Integrates with OpenAI's Realtime Transcription API
+- `transcription/openai.go`: OpenAI implementation for transcription (the transcription system is provider-agnostic; Gemini and other adapters are supported via separate implementations)
 - `transcription/manager.go`: Manages transcription processors for frequencies
 
 ### 3. Frequency Management

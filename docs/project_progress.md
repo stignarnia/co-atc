@@ -52,7 +52,7 @@ AI-Enhanced Airspace Monitoring System - Think of it as the Tesla of air traffic
 **Where the magic happens**
 
 ### Real-Time Transcription
-- ✅ **OpenAI Whisper Integration** - Best-in-class speech recognition
+- ✅ **AI transcription integrations** - OpenAI Whisper, Google Gemini, or other supported providers
 - ✅ **Multi-Frequency Transcription** - All channels transcribed simultaneously
 - ✅ **WebSocket Broadcasting** - Real-time transcription delivery
 - ✅ **SQLite Storage** - Permanent transcription records
@@ -66,7 +66,7 @@ AI-Enhanced Airspace Monitoring System - Think of it as the Tesla of air traffic
 ## Phase 5: ATC Chat Feature (COMPLETED ✅)
 **The crown jewel - AI ATC Assistant**
 
-### OpenAI Realtime API
+### Realtime AI APIs (OpenAI / Gemini)
 - ✅ **Voice Chat Integration** - Talk to AI like a real controller
 - ✅ **Real-Time Context Updates** - AI knows current airspace situation
 - ✅ **Session Management** - Persistent chat sessions
@@ -145,7 +145,7 @@ AI-Enhanced Airspace Monitoring System - Think of it as the Tesla of air traffic
 ### System Specifications
 - **Backend**: Go with SQLite database
 - **Frontend**: Vanilla JavaScript with Leaflet maps
-- **AI Services**: OpenAI Whisper + GPT-4 + Realtime API
+- **AI Services**: OpenAI (Whisper / GPT) and Google Gemini (Realtime & models) — selectable provider via configuration
 - **Audio Processing**: FFmpeg with multi-stream support
 - **Real-time**: WebSocket communications
 - **Deployment**: Single binary with web assets

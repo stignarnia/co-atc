@@ -798,10 +798,11 @@ func (s *Service) fetchAndProcess(ctx context.Context) error {
 							}
 
 							// Update takeoff/landing times based on phase
-							if change.Phase == "T/O" {
+							switch change.Phase {
+							case "T/O":
 								takeoffTime := change.Timestamp
 								a.DateTookoff = &takeoffTime
-							} else if change.Phase == "T/D" {
+							case "T/D":
 								landingTime := change.Timestamp
 								a.DateLanded = &landingTime
 							}
@@ -1944,7 +1945,8 @@ func (s *Service) sendPhaseChangeAlerts(phaseChanges []PhaseChangeInsert, curren
 		}
 
 		// Handle special takeoff/landing phases
-		if change.Phase == "T/O" {
+		switch change.Phase {
+		case "T/O":
 			s.logger.Info("Aircraft TOOK OFF",
 				logger.String("hex", aircraft.Hex),
 				logger.String("flight", aircraft.Flight),
@@ -1954,7 +1956,7 @@ func (s *Service) sendPhaseChangeAlerts(phaseChanges []PhaseChangeInsert, curren
 			)
 
 			// T/O phase change message is sent by the main phase change handler
-		} else if change.Phase == "T/D" {
+		case "T/D":
 			s.logger.Info("Aircraft LANDED",
 				logger.String("hex", aircraft.Hex),
 				logger.String("flight", aircraft.Flight),
@@ -1984,7 +1986,8 @@ func (s *Service) sendImmediateGroundTransitionAlerts(phaseChanges []PhaseChange
 			previousPhase = phaseHistory[1].Phase
 		}
 
-		if change.Phase == "T/O" {
+		switch change.Phase {
+		case "T/O":
 			s.logger.Info("Aircraft TOOK OFF (IMMEDIATE)",
 				logger.String("hex", aircraft.Hex),
 				logger.String("flight", aircraft.Flight),
@@ -2014,7 +2017,7 @@ func (s *Service) sendImmediateGroundTransitionAlerts(phaseChanges []PhaseChange
 				// T/O phase change message already sent above
 			}
 
-		} else if change.Phase == "T/D" {
+		case "T/D":
 			s.logger.Info("Aircraft LANDED (IMMEDIATE)",
 				logger.String("hex", aircraft.Hex),
 				logger.String("flight", aircraft.Flight),

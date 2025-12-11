@@ -430,10 +430,8 @@ func (sp *StreamProcessor) updateClientActivity(clientID string) {
 	// First, try a read lock to check the condition if an update might be needed.
 	sp.clientsMu.RLock()
 	lastActive, exists := sp.clientLastActive[clientID]
-	needsUpdate := false
-	if exists && now.Sub(lastActive) >= 5*time.Second {
-		needsUpdate = true
-	}
+	needsUpdate := exists && now.Sub(lastActive) >= 5*time.Second
+
 	sp.clientsMu.RUnlock() // Release read lock
 
 	// If no update is needed based on the read-locked check, return early.
