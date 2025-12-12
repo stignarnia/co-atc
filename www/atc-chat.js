@@ -795,6 +795,51 @@ class ATCChat {
     }
   }
 
+  playLastRecording() {
+    if (!this.lastAudioFloat32 || !this.audioContext) {
+      console.warn("No recording available or audio context not initialized");
+      return;
+    }
+
+    try {
+      const buffer = this.audioContext.createBuffer(
+        1,
+        this.lastAudioFloat32.length,
+        24000,
+      );
+      buffer.getChannelData(0).set(this.lastAudioFloat32);
+
+      const source = this.audioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(this.audioContext.destination);
+      source.start();
+      console.log("Playing last recording...");
+    } catch (e) {
+      console.error("Failed to play recording:", e);
+    }
+  }
+
+  // Simple linear interpolation resampler
+  resampleAudio(data, inputRate, outputRate) {
+    if (inputRate === outputRate) return data;
+    const ratio = inputRate / outputRate;
+    const newLength = Math.round(data.length / ratio);
+    const result = new Float32Array(newLength);
+
+    for (let i = 0; i < newLength; i++) {
+      const p = i * ratio;
+      const low = Math.floor(p);
+      const high = Math.ceil(p);
+      const w = p - low;
+
+      const v0 = data[Math.min(low, data.length - 1)];
+      const v1 = data[Math.min(high, data.length - 1)];
+
+      result[i] = v0 * (1 - w) + v1 * w;
+    }
+    return result;
+  }
+
   // Converts Float32Array of audio data to PCM16 ArrayBuffer (from OpenAI docs)
   floatTo16BitPCM(float32Array) {
     const buffer = new ArrayBuffer(float32Array.length * 2);
