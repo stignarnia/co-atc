@@ -1,49 +1,31 @@
 package gemini
 
 import (
-	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/yegors/co-atc/internal/ai"
 	"github.com/yegors/co-atc/pkg/logger"
-)
-
-const (
-	// DefaultHost is the default host for Gemini API.
-	DefaultHost = "generativelanguage.googleapis.com"
-	// DefaultPath is the WebSocket path for BidiGenerateContent.
-	DefaultPath = "/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+	"google.golang.org/genai"
 )
 
 // Client represents a Google Gemini API client.
 type Client struct {
-	apiKey     string
-	host       string
-	logger     *logger.Logger
-	dialer     *websocket.Dialer
-	httpClient *http.Client
+	apiKey string
+	logger *logger.Logger
 }
 
 // NewClient creates a new Gemini Client.
 func NewClient(apiKey string, logger *logger.Logger) *Client {
 	return &Client{
 		apiKey: apiKey,
-		host:   DefaultHost,
 		logger: logger.Named("gemini"),
-		dialer: &websocket.Dialer{
-			HandshakeTimeout: 30 * time.Second,
-		},
-		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
-		},
 	}
 }
 
@@ -52,7 +34,7 @@ func NewClient(apiKey string, logger *logger.Logger) *Client {
 func (c *Client) CreateRealtimeSession(ctx context.Context, config ai.RealtimeSessionConfig, systemPrompt string) (*ai.RealtimeSession, error) {
 	return &ai.RealtimeSession{
 		ID:           fmt.Sprintf("gemini_%d", time.Now().UnixNano()),
-		ProviderID:   "gemini_bidi",
+		ProviderID:   "gemini_live",
 		CreatedAt:    time.Now().UTC(),
 		ExpiresAt:    time.Now().Add(24 * time.Hour),
 		Active:       true,
@@ -62,296 +44,402 @@ func (c *Client) CreateRealtimeSession(ctx context.Context, config ai.RealtimeSe
 	}, nil
 }
 
-// GeminiConnection wrapper that adapts OpenAI protocol to Gemini.
+// GeminiConnection wrapper that adapts OpenAI protocol to Gemini using genai SDK.
 type GeminiConnection struct {
-	conn       *websocket.Conn
-	mu         sync.Mutex
+	session    *genai.Session
 	readBuffer [][]byte
-	logger     *logger.Logger
+	mu         sync.Mutex
 
-	currentText string // Buffer for accumulating text within a turn.
-	sampleRate  int    // Sample rate for audio output/input.
+	currentText      string // For chat completion accumulation
+	currentInputText string // ONLY for input transcription accumulation
+	sampleRate       int
+	logger           *logger.Logger
+
+	// Mode switches
+	transcriptionOnly bool
+
+	// Input transcription finalization timer
+	inputTxIdleTimer *time.Timer
+	inputTxIdleMu    sync.Mutex
+
+	// Concurrency control for Read()
+	notifyCh chan struct{}
+	_recvCh  chan recvMsg
+}
+
+type recvMsg struct {
+	msg *genai.LiveServerMessage
+	err error
 }
 
 func (c *GeminiConnection) Send(data []byte) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	// Parse OpenAI message.
 	var oaMsg map[string]any
 	if err := json.Unmarshal(data, &oaMsg); err != nil {
 		c.logger.Error("Failed to parse OpenAI message", logger.Error(err))
-		return nil // Ignore bad messages.
+		return nil
 	}
 
 	msgType, _ := oaMsg["type"].(string)
 
 	switch msgType {
 	case "input_audio_buffer.append":
-		// OpenAI sends base64 encoded PCM16 audio.
-		if audio, ok := oaMsg["audio"].(string); ok {
-			geminiMsg := map[string]any{
-				"realtimeInput": map[string]any{
-					"audio": map[string]any{
-						"mimeType": fmt.Sprintf("audio/pcm;rate=%d", c.sampleRate),
-						"data":     audio,
-					},
-				},
+		if audioBase64, ok := oaMsg["audio"].(string); ok {
+			audioBytes, err := base64.StdEncoding.DecodeString(audioBase64)
+			if err != nil {
+				c.logger.Error("Failed to decode base64 audio", logger.Error(err))
+				return nil
 			}
-			return c.conn.WriteJSON(geminiMsg)
+
+			// Send to Gemini using SDK
+			// Use generic "audio/pcm" MIME type as verified in standalone tests.
+			err = c.session.SendRealtimeInput(genai.LiveRealtimeInput{
+				Audio: &genai.Blob{
+					Data:     audioBytes,
+					MIMEType: "audio/pcm;rate=24000",
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("gemini send audio failed: %w", err)
+			}
 		}
 
 	case "session.update":
-		// Not mapped: Gemini Live does not support mid‑stream system instruction updates
-		// via this adapter; ignored on purpose.
+		// Handle system instruction updates by sending them as text messages
+		sessionMap, ok := oaMsg["session"].(map[string]any)
+		if !ok {
+			return nil
+		}
+		instructions, ok := sessionMap["instructions"].(string)
+		if !ok || instructions == "" {
+			return nil
+		}
+
+		// Send as text message to context
+		err := c.session.SendRealtimeInput(genai.LiveRealtimeInput{
+			Text: "System Update: " + instructions,
+		})
+		if err != nil {
+			c.logger.Error("Failed to send system update to Gemini", logger.Error(err))
+			return fmt.Errorf("gemini send system update failed: %w", err)
+		}
 		return nil
 
 	default:
-		// Ignore unsupported message types.
 		return nil
 	}
 
 	return nil
 }
 
-func (c *GeminiConnection) Read() (int, []byte, error) {
-	// Serve from buffer first.
-	c.mu.Lock()
-	if len(c.readBuffer) > 0 {
-		msg := c.readBuffer[0]
-		c.readBuffer = c.readBuffer[1:]
-		c.mu.Unlock()
-		return websocket.TextMessage, msg, nil
+func (c *GeminiConnection) scheduleInputTxFinalize() {
+	c.inputTxIdleMu.Lock()
+	defer c.inputTxIdleMu.Unlock()
+
+	// Reset timer each time we get a delta. When it fires, emit a "completed".
+	if c.inputTxIdleTimer != nil {
+		c.inputTxIdleTimer.Stop()
 	}
+
+	c.inputTxIdleTimer = time.AfterFunc(650*time.Millisecond, func() {
+		c.mu.Lock()
+		final := c.currentInputText
+		c.currentInputText = ""
+		c.mu.Unlock()
+
+		final = strings.TrimSpace(final)
+		if final == "" {
+			return
+		}
+
+		oaMsg := map[string]any{
+			"type":       "conversation.item.input_audio_transcription.completed",
+			"transcript": final,
+			"item_id":    "gemini-item-in",
+		}
+		b, err := json.Marshal(oaMsg)
+		if err != nil {
+			return
+		}
+
+		c.mu.Lock()
+		c.readBuffer = append(c.readBuffer, b)
+		notifyCh := c.notifyCh
+		c.mu.Unlock()
+
+		select {
+		case notifyCh <- struct{}{}:
+		default:
+		}
+	})
+}
+
+func (c *GeminiConnection) Read() (int, []byte, error) {
+	// Start the receiver goroutine once.
+	c.mu.Lock()
+	if c.notifyCh == nil {
+		c.notifyCh = make(chan struct{}, 1)
+	}
+	// Create receive channel only once.
+	c.mu.Unlock()
+
+	return c.readLoop()
+}
+
+// readLoop handles the continuous receiving of messages from the session.
+func (c *GeminiConnection) readLoop() (int, []byte, error) {
+	// Lazily start receiver goroutine exactly once.
+	c.mu.Lock()
+	if c._recvCh == nil {
+		c._recvCh = make(chan recvMsg, 8)
+		go func() {
+			for {
+				m, err := c.session.Receive()
+				select {
+				case c._recvCh <- recvMsg{msg: m, err: err}:
+				default:
+					// Drop if consumer is behind; keep connection alive.
+				}
+				if err != nil {
+					return
+				}
+			}
+		}()
+	}
+	recvCh := c._recvCh
+	notifyCh := c.notifyCh
 	c.mu.Unlock()
 
 	for {
-		_, msg, err := c.conn.ReadMessage()
-		if err != nil {
-			return 0, nil, err
+		// Serve from buffer first.
+		c.mu.Lock()
+		if len(c.readBuffer) > 0 {
+			out := c.readBuffer[0]
+			c.readBuffer = c.readBuffer[1:]
+			c.mu.Unlock()
+			return websocket.TextMessage, out, nil
 		}
+		c.mu.Unlock()
 
-		var geminiMsg map[string]any
-		if err := json.Unmarshal(msg, &geminiMsg); err != nil {
+		select {
+		case <-notifyCh:
+			// Something was queued (e.g., timer completed). Loop will pop buffer.
 			continue
-		}
 
-		var outputMessages [][]byte
+		case r := <-recvCh:
+			if r.err != nil {
+				return 0, nil, r.err
+			}
+			msg := r.msg
 
-		// Handle setupComplete (optional: just ignore it for now).
-		if _, ok := geminiMsg["setupComplete"]; ok {
-			// No specific action required in this adapter.
-		}
+			var newMessages [][]byte
 
-		// Handle serverContent: model output.
-		if serverContent, ok := geminiMsg["serverContent"].(map[string]any); ok {
-			// Transcription of input audio (if enabled on setup).
-			if inputTx, ok := serverContent["inputTranscription"].(map[string]any); ok {
-				if text, ok := inputTx["text"].(string); ok && text != "" {
+			if msg != nil && msg.ServerContent != nil {
+				msgJSON, _ := json.Marshal(msg)
+
+				// 1) Input transcription deltas
+				inputTx := jsonGetString(msgJSON, "serverContent", "inputTranscription", "text")
+				if inputTx != "" {
+					c.mu.Lock()
+					c.currentInputText += inputTx
+					c.mu.Unlock()
+
+					c.scheduleInputTxFinalize()
+
 					oaMsg := map[string]any{
 						"type":          "conversation.item.input_audio_transcription.delta",
-						"delta":         text,
-						"item_id":       "gemini-item",
+						"delta":         inputTx,
+						"item_id":       "gemini-item-in",
 						"content_index": 0,
 					}
-					b, _ := json.Marshal(oaMsg)
-					outputMessages = append(outputMessages, b)
-				}
-			}
-
-			// Transcription of output audio (if enabled).
-			if outputTx, ok := serverContent["outputTranscription"].(map[string]any); ok {
-				if text, ok := outputTx["text"].(string); ok && text != "" {
-					oaMsg := map[string]any{
-						"type":          "conversation.item.input_audio_transcription.delta",
-						"delta":         text,
-						"item_id":       "gemini-item",
-						"content_index": 0,
+					if b, err := json.Marshal(oaMsg); err == nil {
+						newMessages = append(newMessages, b)
 					}
-					b, _ := json.Marshal(oaMsg)
-					outputMessages = append(outputMessages, b)
 				}
-			}
 
-			// Model turn content (text/audio parts).
-			if modelTurn, ok := serverContent["modelTurn"].(map[string]any); ok {
-				if parts, ok := modelTurn["parts"].([]any); ok {
-					for _, p := range parts {
-						part, ok := p.(map[string]any)
-						if !ok {
+				// 2) Output transcription deltas (chat mode only)
+				if !c.transcriptionOnly {
+					outputTx := jsonGetString(msgJSON, "serverContent", "outputTranscription", "text")
+					if outputTx != "" {
+						oaMsg := map[string]any{
+							"type":          "response.audio_transcript.delta",
+							"delta":         outputTx,
+							"response_id":   "gemini-resp",
+							"item_id":       "gemini-item-out-tx",
+							"content_index": 0,
+						}
+						if b, err := json.Marshal(oaMsg); err == nil {
+							newMessages = append(newMessages, b)
+						}
+					}
+				}
+
+				// 3) Model turn (chat mode only)
+				if !c.transcriptionOnly && msg.ServerContent.ModelTurn != nil {
+					for _, part := range msg.ServerContent.ModelTurn.Parts {
+						if part == nil {
 							continue
 						}
 
-						// Text.
-						if text, ok := part["text"].(string); ok && text != "" {
+						// Ignore "thought" parts to prevent chain-of-thought content from appearing in the UI.
+						if part.Thought {
+							continue
+						}
+
+						if part.Text != "" {
 							c.mu.Lock()
-							c.currentText += text
+							c.currentText += part.Text
 							c.mu.Unlock()
 
 							oaMsg := map[string]any{
-								"type":          "conversation.item.input_audio_transcription.delta",
-								"delta":         text,
-								"item_id":       "gemini-item",
+								"type":          "response.text.delta",
+								"delta":         part.Text,
+								"response_id":   "gemini-resp",
+								"item_id":       "gemini-item-text",
 								"content_index": 0,
 							}
-							b, _ := json.Marshal(oaMsg)
-							outputMessages = append(outputMessages, b)
+							if b, err := json.Marshal(oaMsg); err == nil {
+								newMessages = append(newMessages, b)
+							}
 						}
 
-						// Audio: inlineData with base64 PCM.
-						if inlineData, ok := part["inlineData"].(map[string]any); ok {
-							if data, ok := inlineData["data"].(string); ok && data != "" {
-								oaMsg := map[string]any{
-									"type":        "response.audio.delta",
-									"delta":       data,
-									"response_id": "gemini-resp",
-									"item_id":     "gemini-item",
-								}
-								b, _ := json.Marshal(oaMsg)
-								outputMessages = append(outputMessages, b)
+						if part.InlineData != nil && len(part.InlineData.Data) > 0 {
+							audioB64 := base64.StdEncoding.EncodeToString(part.InlineData.Data)
+							oaMsg := map[string]any{
+								"type":          "response.audio.delta",
+								"delta":         audioB64,
+								"response_id":   "gemini-resp",
+								"item_id":       "gemini-item-audio",
+								"content_index": 0,
+							}
+							if b, err := json.Marshal(oaMsg); err == nil {
+								newMessages = append(newMessages, b)
 							}
 						}
 					}
 				}
 
-				// Turn completion: flush accumulated text as response.text.done.
-				if turnComplete, ok := serverContent["turnComplete"].(bool); ok && turnComplete {
+				// 4) Turn complete (chat mode only)
+				turnComplete := jsonGetBool(msgJSON, "serverContent", "turnComplete")
+				if turnComplete && !c.transcriptionOnly {
 					c.mu.Lock()
-					finalText := c.currentText
+					finalModelText := c.currentText
 					c.currentText = ""
 					c.mu.Unlock()
 
-					if finalText != "" {
-						oaMsg := map[string]any{
-							"type": "response.text.done",
-							"text": finalText,
-						}
-						b, _ := json.Marshal(oaMsg)
-						outputMessages = append(outputMessages, b)
+					oaMsg := map[string]any{
+						"type": "response.text.done",
+						"text": finalModelText,
+					}
+					if b, err := json.Marshal(oaMsg); err == nil {
+						newMessages = append(newMessages, b)
+					}
+
+					oaTxDone := map[string]any{
+						"type":        "response.audio_transcript.done",
+						"response_id": "gemini-resp",
+						"item_id":     "gemini-item-out-tx",
+					}
+					if b, err := json.Marshal(oaTxDone); err == nil {
+						newMessages = append(newMessages, b)
+					}
+
+					oaAudioDone := map[string]any{
+						"type":        "response.audio.done",
+						"response_id": "gemini-resp",
+						"item_id":     "gemini-item-audio",
+					}
+					if b, err := json.Marshal(oaAudioDone); err == nil {
+						newMessages = append(newMessages, b)
 					}
 				}
 			}
-		}
 
-		if len(outputMessages) > 0 {
-			c.mu.Lock()
-			if len(outputMessages) > 1 {
-				c.readBuffer = append(c.readBuffer, outputMessages[1:]...)
+			if len(newMessages) > 0 {
+				c.mu.Lock()
+				c.readBuffer = append(c.readBuffer, newMessages...)
+				out := c.readBuffer[0]
+				c.readBuffer = c.readBuffer[1:]
+				c.mu.Unlock()
+				return websocket.TextMessage, out, nil
 			}
-			c.mu.Unlock()
-			return websocket.TextMessage, outputMessages[0], nil
 		}
-		// If no relevant output, keep reading.
 	}
 }
 
 func (c *GeminiConnection) Close() error {
-	return c.conn.Close()
+	c.inputTxIdleMu.Lock()
+	if c.inputTxIdleTimer != nil {
+		c.inputTxIdleTimer.Stop()
+	}
+	c.inputTxIdleMu.Unlock()
+
+	if c.session != nil {
+		c.session.Close()
+	}
+	return nil
 }
 
 func (c *Client) ConnectSession(ctx context.Context, session *ai.RealtimeSession) (ai.AIConnection, error) {
-	u := url.URL{
-		Scheme: "wss",
-		Host:   c.host,
-		Path:   DefaultPath,
-	}
-
-	q := u.Query()
-	q.Set("key", c.apiKey)
-	u.RawQuery = q.Encode()
-
-	c.logger.Info("Connecting to Gemini Live API", logger.String("url", u.String()))
-
-	conn, resp, err := c.dialer.DialContext(ctx, u.String(), nil)
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		Backend: genai.BackendGeminiAPI,
+		APIKey:  c.apiKey,
+		HTTPOptions: genai.HTTPOptions{
+			APIVersion: "v1beta",
+		},
+	})
 	if err != nil {
-		if resp != nil {
-			c.logger.Error(
-				"Gemini WebSocket handshake failed",
-				logger.Int("status_code", resp.StatusCode),
-				logger.String("status", resp.Status),
-			)
-		}
-		return nil, fmt.Errorf("failed to dial Gemini: %w", err)
-	}
-
-	voiceName := session.Config.Voice
-	if voiceName == "" {
-		voiceName = "Puck"
-	}
-	switch voiceName {
-	case "alloy", "echo", "fable", "onyx", "nova", "shimmer":
-		voiceName = "Puck"
+		return nil, fmt.Errorf("genai.NewClient: %w", err)
 	}
 
 	modelName := session.Config.Model
 	if modelName == "" {
-		modelName = "gemini-1.5-flash"
-	}
-	if !stringsContains(modelName, "/") {
-		modelName = "models/" + modelName
+		modelName = "gemini-2.5-flash-native-audio-preview-09-2025"
 	}
 
-	setupMsg := map[string]any{
-		"setup": map[string]any{
-			"model": modelName,
-			"generationConfig": map[string]any{
-				"responseModalities": []string{"AUDIO"},
-				"speechConfig": map[string]any{
-					"voiceConfig": map[string]any{
-						"prebuiltVoiceConfig": map[string]any{
-							"voiceName": voiceName,
-						},
-					},
-				},
-			},
-			"systemInstruction": map[string]any{
-				"parts": []map[string]any{
-					{"text": session.SystemPrompt},
-				},
-			},
-			// Optionally, enable input/output transcription here if you need it:
-			// "inputAudioTranscription":  map[string]any{},
-			// "outputAudioTranscription": map[string]any{},
+	// Map Voice
+	voiceName := session.Config.Voice
+	if voiceName == "" {
+		voiceName = "Puck" // Default voice
+	}
+
+	// Map Generation Config
+	temp := float32(session.Config.Temperature)
+	maxTokens := session.Config.MaxResponseTokens
+
+	liveCfg := &genai.LiveConnectConfig{
+		SystemInstruction: genai.NewContentFromText(session.SystemPrompt, "system"),
+		ResponseModalities: []genai.Modality{
+			genai.ModalityAudio,
 		},
+		SpeechConfig: &genai.SpeechConfig{
+			VoiceConfig: &genai.VoiceConfig{
+				PrebuiltVoiceConfig: &genai.PrebuiltVoiceConfig{
+					VoiceName: voiceName,
+				},
+			},
+		},
+		Temperature:              &temp,
+		MaxOutputTokens:          int32(maxTokens),
+		InputAudioTranscription:  &genai.AudioTranscriptionConfig{},
+		OutputAudioTranscription: &genai.AudioTranscriptionConfig{},
 	}
 
-	if err := conn.WriteJSON(setupMsg); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("failed to send setup to Gemini: %w", err)
+	genaiSession, err := client.Live.Connect(ctx, modelName, liveCfg)
+	if err != nil {
+		return nil, fmt.Errorf("client.Live.Connect: %w", err)
 	}
 
-	// NOTE: per spec you should wait for a message with "setupComplete"
-	// before sending realtimeInput; that is handled by the caller using Read().
+	c.logger.Info("Connected to Gemini Live", logger.String("model", modelName))
 
 	return &GeminiConnection{
-		conn:       conn,
-		logger:     c.logger,
-		readBuffer: make([][]byte, 0),
-		sampleRate: session.Config.SampleRate,
+		session:           genaiSession,
+		readBuffer:        make([][]byte, 0),
+		sampleRate:        session.Config.SampleRate,
+		logger:            c.logger,
+		transcriptionOnly: false,
+		notifyCh:          make(chan struct{}, 1),
 	}, nil
-}
-
-func stringsContains(s, substr string) bool {
-	for i := 0; i < len(s); i++ {
-		if hasPrefix(s[i:], substr) {
-			return true
-		}
-	}
-	return false
-}
-
-func hasPrefix(s, prefix string) bool {
-	return len(s) >= len(prefix) && s[0:len(prefix)] == prefix
-}
-
-func (c *Client) UpdateSessionInstructions(ctx context.Context, sessionID string, instructions string) error {
-	// Live API configuration updates are not wired in this adapter.
-	return nil
-}
-
-func (c *Client) EndSession(ctx context.Context, sessionID string) error {
-	// Session ends when the WebSocket is closed by the caller.
-	return nil
 }
 
 func (c *Client) ValidateSession(session *ai.RealtimeSession) bool {
@@ -369,162 +457,177 @@ func (c *Client) CreateTranscriptionSession(ctx context.Context, config ai.Trans
 }
 
 func (c *Client) ConnectTranscriptionSession(ctx context.Context, session *ai.TranscriptionSession) (ai.AIConnection, error) {
-	u := url.URL{
-		Scheme: "wss",
-		Host:   c.host,
-		Path:   DefaultPath,
-	}
-	q := u.Query()
-	q.Set("key", c.apiKey)
-	u.RawQuery = q.Encode()
-
-	c.logger.Info("Connecting to Gemini Live API for Transcription", logger.String("url", u.String()))
-
-	conn, resp, err := c.dialer.DialContext(ctx, u.String(), nil)
-	if err != nil {
-		if resp != nil {
-			c.logger.Error(
-				"Gemini WebSocket handshake failed",
-				logger.Int("status_code", resp.StatusCode),
-				logger.String("status", resp.Status),
-			)
-		}
-		return nil, fmt.Errorf("failed to dial Gemini: %w", err)
-	}
-
-	model := session.Config.Model
-	if model == "" {
-		model = "gemini-1.5-flash"
-	}
-	if !stringsContains(model, "/") {
-		model = "models/" + model
-	}
-
-	systemText := "You are a transcriber. Transcribe the audio exactly. Do not add anything else."
-	if session.Config.Prompt != "" {
-		systemText = session.Config.Prompt
-	}
-
-	setupMsg := map[string]any{
-		"setup": map[string]any{
-			"model": model,
-			"generationConfig": map[string]any{
-				"responseModalities": []string{"TEXT"},
-			},
-			"systemInstruction": map[string]any{
-				"parts": []map[string]any{
-					{"text": systemText},
-				},
-			},
-			"inputAudioTranscription": map[string]any{},
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		Backend: genai.BackendGeminiAPI,
+		APIKey:  c.apiKey,
+		HTTPOptions: genai.HTTPOptions{
+			APIVersion: "v1beta",
 		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("genai.NewClient: %w", err)
 	}
 
-	if err := conn.WriteJSON(setupMsg); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("failed to send setup to Gemini: %w", err)
+	modelName := session.Config.Model
+	if modelName == "" {
+		modelName = "gemini-2.5-flash-native-audio-preview-09-2025"
 	}
+
+	sysPrompt := session.Config.Prompt
+	if strings.TrimSpace(sysPrompt) == "" {
+		sysPrompt = "Transcribe the incoming audio accurately."
+	}
+
+	// Transcription only: We want NO ResponseModalities (no generation), just Input Transcription.
+	liveCfg := &genai.LiveConnectConfig{
+		SystemInstruction: genai.NewContentFromText(sysPrompt, "system"),
+		// Do NOT request output audio/text modalities in a transcription service.
+		// Leave nil so it is omitted.
+		ResponseModalities:      []genai.Modality{genai.ModalityAudio},
+		InputAudioTranscription: &genai.AudioTranscriptionConfig{},
+		// Do not set OutputAudioTranscription
+		// Do not set SpeechConfig
+	}
+
+	genaiSession, err := client.Live.Connect(ctx, modelName, liveCfg)
+	if err != nil {
+		return nil, fmt.Errorf("client.Live.Connect: %w", err)
+	}
+
+	c.logger.Info("Connected to Gemini Live (transcription)",
+		logger.String("model", modelName))
 
 	return &GeminiConnection{
-		conn:       conn,
-		logger:     c.logger,
-		readBuffer: make([][]byte, 0),
-		sampleRate: session.Config.SampleRate,
+		session:           genaiSession,
+		readBuffer:        make([][]byte, 0),
+		sampleRate:        session.Config.SampleRate,
+		logger:            c.logger,
+		transcriptionOnly: true,
+		notifyCh:          make(chan struct{}, 1),
 	}, nil
 }
 
 // -- ChatProvider Implementation --
 
 func (c *Client) ChatCompletion(ctx context.Context, messages []ai.ChatMessage, config ai.ChatConfig) (string, error) {
-	apiURL := fmt.Sprintf(
-		"https://%s/v1beta/models/%s:generateContent?key=%s",
-		c.host,
-		config.Model,
-		c.apiKey,
-	)
-
-	type Part struct {
-		Text string `json:"text,omitempty"`
-	}
-	type Content struct {
-		Role  string `json:"role,omitempty"`
-		Parts []Part `json:"parts"`
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		Backend: genai.BackendGeminiAPI,
+		APIKey:  c.apiKey,
+		HTTPOptions: genai.HTTPOptions{
+			APIVersion: "v1beta",
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("genai.NewClient: %w", err)
 	}
 
-	var (
-		geminiContents    []Content
-		systemInstruction *Content
-	)
+	model := config.Model
+	if model == "" {
+		model = "gemini-2.5-flash"
+	}
 
+	var fullSystemPrompt string
+	var finalContents []*genai.Content
+	var systemInstruction *genai.Content
+
+	// First pass: extract and merge all system prompts
 	for _, msg := range messages {
 		if msg.Role == "system" {
-			systemInstruction = &Content{
-				Parts: []Part{{Text: msg.Content}},
-			}
+			fullSystemPrompt += msg.Content + "\n"
+		}
+	}
+
+	if fullSystemPrompt != "" {
+		systemInstruction = genai.NewContentFromText(fullSystemPrompt, "system")
+	}
+
+	// Second pass: collect conversation history
+	for _, msg := range messages {
+		if msg.Role == "system" {
 			continue
 		}
-
-		role := "user"
 		if msg.Role == "assistant" {
-			role = "model"
+			finalContents = append(finalContents, genai.NewContentFromText(msg.Content, "model"))
+		} else {
+			finalContents = append(finalContents, genai.NewContentFromText(msg.Content, "user"))
 		}
-
-		geminiContents = append(geminiContents, Content{
-			Role:  role,
-			Parts: []Part{{Text: msg.Content}},
-		})
 	}
 
-	reqBody := map[string]any{
-		"contents": geminiContents,
-		"generationConfig": map[string]any{
-			"temperature":     config.Temperature,
-			"maxOutputTokens": config.MaxTokens,
-		},
+	temp := float32(config.Temperature)
+	genConfig := &genai.GenerateContentConfig{
+		Temperature: &temp,
+	}
+	if config.MaxTokens > 0 {
+		mt := int32(config.MaxTokens)
+		genConfig.MaxOutputTokens = mt
 	}
 	if systemInstruction != nil {
-		reqBody["systemInstruction"] = systemInstruction
+		genConfig.SystemInstruction = systemInstruction
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	resp, err := client.Models.GenerateContent(ctx, model, finalContents, genConfig)
 	if err != nil {
 		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("gemini chat failed: %s %s", resp.Status, string(body))
+	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil {
+		return "", fmt.Errorf("no candidates in response")
 	}
 
-	var result struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"content"`
-		} `json:"candidates"`
+	var sb strings.Builder
+	for _, p := range resp.Candidates[0].Content.Parts {
+		if p == nil {
+			continue
+		}
+		if p.Text != "" {
+			sb.WriteString(p.Text)
+		}
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
+	out := strings.TrimSpace(sb.String())
+	if out == "" {
+		return "", fmt.Errorf("no text content in response")
 	}
+	return out, nil
+}
 
-	if len(result.Candidates) > 0 && len(result.Candidates[0].Content.Parts) > 0 {
-		return result.Candidates[0].Content.Parts[0].Text, nil
+// Helper from user example
+func jsonGetString(raw []byte, path ...string) string {
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return ""
 	}
+	cur := v
+	for _, p := range path {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return ""
+		}
+		cur, ok = m[p]
+		if !ok {
+			return ""
+		}
+	}
+	s, _ := cur.(string)
+	return s
+}
 
-	return "", fmt.Errorf("no content in gemini response")
+func jsonGetBool(raw []byte, path ...string) bool {
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return false
+	}
+	cur := v
+	for _, p := range path {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return false
+		}
+		cur, ok = m[p]
+		if !ok {
+			return false
+		}
+	}
+	b, _ := cur.(bool)
+	return b
 }

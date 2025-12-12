@@ -177,10 +177,6 @@ func (s *Service) EndSession(ctx context.Context, sessionID string) error {
 
 	s.UnregisterWebSocketConnection(sessionID)
 
-	if err := s.realtimeProvider.EndSession(ctx, session.ProviderID); err != nil {
-		s.logger.Error("Failed to end provider session", logger.Error(err))
-	}
-
 	session.Active = false
 	return nil
 }
@@ -230,16 +226,6 @@ func (s *Service) ListActiveSessions() []*ai.RealtimeSession {
 func (s *Service) UpdateSessionContext(ctx context.Context, sessionID string) error {
 	session, err := s.GetSession(sessionID)
 	if err != nil {
-		return err
-	}
-
-	systemPrompt, err := s.templatingService.RenderATCChatTemplate(s.config.SystemPromptPath)
-	if err != nil {
-		return err
-	}
-
-	// Provider logic
-	if err := s.realtimeProvider.UpdateSessionInstructions(ctx, session.ProviderID, systemPrompt); err != nil {
 		return err
 	}
 

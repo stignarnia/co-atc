@@ -39,12 +39,6 @@ type RealtimeProvider interface {
 	// Returns the raw websocket connection and any error
 	ConnectSession(ctx context.Context, session *RealtimeSession) (AIConnection, error)
 
-	// UpdateSessionInstructions updates the system instructions for a session
-	UpdateSessionInstructions(ctx context.Context, sessionID string, instructions string) error
-
-	// EndSession terminates a session
-	EndSession(ctx context.Context, sessionID string) error
-
 	// ValidateSession checks if a session is valid
 	ValidateSession(session *RealtimeSession) bool
 }

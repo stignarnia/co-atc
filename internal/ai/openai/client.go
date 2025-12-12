@@ -200,15 +200,6 @@ func (c *Client) ConnectSession(ctx context.Context, session *ai.RealtimeSession
 	return &OpenAIConnection{conn: conn}, nil
 }
 
-func (c *Client) UpdateSessionInstructions(ctx context.Context, sessionID string, instructions string) error {
-	// Not implemented in Realtime API HTTP yet
-	return nil
-}
-
-func (c *Client) EndSession(ctx context.Context, sessionID string) error {
-	return nil
-}
-
 func (c *Client) ValidateSession(session *ai.RealtimeSession) bool {
 	if session == nil {
 		return false
