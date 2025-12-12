@@ -5,12 +5,11 @@ class ATCChat {
     this.isRecording = false;
     this.isConnected = false;
     this.websocket = null;
-    this.mediaRecorder = null;
-    this.audioContext = null;
     this.stream = null;
     this.audioQueue = [];
-    this.audioBuffer = [];
-    this.scriptProcessor = null;
+
+    // Audio Recorder instance
+    this.audioRecorder = null;
     this.isPlaying = false;
     this.pushToTalkActive = false;
     this.currentAIResponse = null; // For accumulating AI response text
@@ -386,46 +385,17 @@ class ATCChat {
 
   async initializeAudio() {
     try {
-      // Request microphone access
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          sampleRate: 24000,
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-
-      // Create audio context
-      this.audioContext = new (
-        window.AudioContext || window.webkitAudioContext
-      )({
+      // Initialize AudioRecorder
+      this.audioRecorder = new AudioRecorder({
         sampleRate: 24000,
+        onAudioData: (data) => {
+          this.handleAudioData(data);
+        }
       });
 
-      // Set up audio analyser for visualization
-      try {
-        const sourceNode = this.audioContext.createMediaStreamSource(
-          this.stream,
-        );
-        this.audioAnalyser = this.audioContext.createAnalyser();
-        this.audioAnalyser.fftSize = 256;
-        this.audioAnalyser.smoothingTimeConstant = 0.5;
-        this.audioDataArray = new Uint8Array(
-          this.audioAnalyser.frequencyBinCount,
-        );
+      // Initialize the audio context (required for playback as well)
 
-        sourceNode.connect(this.audioAnalyser);
-        // Don't connect to destination to avoid feedback
-
-        console.log("[ATC-Chat] Audio analyser set up for visualization");
-      } catch (e) {
-        console.warn("[ATC-Chat] Could not set up audio analyser:", e);
-        // Continue without analyser - visualization will use fallback
-      }
-
-      console.log("[ATC-Chat] Audio initialized successfully");
+      console.log("[ATC-Chat] AudioRecorder initialized.");
     } catch (error) {
       throw new Error(`Failed to initialize audio: ${error.message}`);
     }
@@ -612,6 +582,29 @@ class ATCChat {
     this.queueAudioBlob(blob);
   }
 
+  // New method to handle audio from AudioRecorder
+  handleAudioData(audioEvent) {
+    if (!this.isConnected || !this.pushToTalkActive) return;
+
+    // Extract data
+    const base64Audio = audioEvent.base64;
+    const rawData = audioEvent.raw;
+
+    // Accumulate raw data for playback
+    if (rawData && this.currentRecordingRaw) {
+      this.currentRecordingRaw.push(rawData);
+    }
+
+    const message = {
+      type: "input_audio_buffer.append",
+      audio: base64Audio,
+    };
+
+    if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+      this.websocket.send(JSON.stringify(message));
+    }
+  }
+
   async startPushToTalk() {
     if (!this.isConnected || this.pushToTalkActive) return;
 
@@ -664,111 +657,57 @@ class ATCChat {
     }
   }
 
-  startRecording() {
-    if (!this.stream || this.isRecording) return;
+  async startRecording() {
+    if (this.isRecording) return;
 
-    try {
-      // Create audio context for PCM conversion
-      if (!this.audioContext) {
-        this.audioContext = new (
-          window.AudioContext || window.webkitAudioContext
-        )({
-          sampleRate: 24000,
-        });
+    // Reset recording buffer
+    this.currentRecordingRaw = [];
+
+    if (this.audioRecorder) {
+      try {
+        await this.audioRecorder.start();
+        this.isRecording = true;
+        console.log("[ATC-Chat] Started recording via AudioRecorder");
+      } catch (e) {
+        console.error("[ATC-Chat] Failed to start AudioRecorder:", e);
       }
-
-      // Create media stream source
-      const source = this.audioContext.createMediaStreamSource(this.stream);
-
-      // Create script processor for PCM data
-      this.scriptProcessor = this.audioContext.createScriptProcessor(
-        4096,
-        1,
-        1,
-      );
-      this.audioBuffer = [];
-
-      this.scriptProcessor.onaudioprocess = (event) => {
-        if (this.isRecording) {
-          const inputBuffer = event.inputBuffer;
-          const inputData = inputBuffer.getChannelData(0); // Float32Array
-
-          // Store the Float32Array data directly
-          // We'll convert to PCM16 when sending
-          const audioChunk = new Float32Array(inputData.length);
-          audioChunk.set(inputData);
-          this.audioBuffer.push(audioChunk);
-        }
-      };
-
-      // Connect the audio graph
-      source.connect(this.scriptProcessor);
-      this.scriptProcessor.connect(this.audioContext.destination);
-
-      this.isRecording = true;
-      console.log("[ATC-Chat] Started recording with Float32 capture");
-    } catch (error) {
-      console.error("[ATC-Chat] Failed to start recording:", error);
     }
   }
 
-  stopRecording() {
+  async stopRecording() {
     if (!this.isRecording) return;
 
-    this.isRecording = false;
+    if (this.audioRecorder) {
+      this.audioRecorder.stop();
+      this.isRecording = false;
+      console.log("[ATC-Chat] Stopped recording via AudioRecorder");
 
-    // Disconnect audio processing
-    if (this.scriptProcessor) {
-      this.scriptProcessor.disconnect();
-      this.scriptProcessor = null;
-    }
+      // Process accumulated raw audio for playback
+      if (this.currentRecordingRaw && this.currentRecordingRaw.length > 0) {
+        // Calculate total length
+        let totalLength = 0;
+        for (const chunk of this.currentRecordingRaw) {
+          totalLength += chunk.length;
+        }
 
-    // Convert and send the accumulated PCM data
-    this.convertAndSendPCMAudio();
-
-    console.log("[ATC-Chat] Stopped recording");
-  }
-
-  convertAndSendPCMAudio() {
-    try {
-      if (this.audioBuffer.length === 0) {
-        console.warn("[ATC-Chat] No audio data to send");
-        return;
+        // Create single float32 buffer (-1 to 1)
+        this.lastAudioFloat32 = new Float32Array(totalLength);
+        let offset = 0;
+        for (const chunk of this.currentRecordingRaw) {
+          // Convert Int16 to Float32
+          for (let i = 0; i < chunk.length; i++) {
+            const int16 = chunk[i];
+            const float = int16 < 0 ? int16 / 0x8000 : int16 / 0x7FFF;
+            this.lastAudioFloat32[offset++] = float;
+          }
+        }
+        console.log(`[ATC-Chat] Processed ${totalLength} samples for playback.`);
+      } else {
+        this.lastAudioFloat32 = null;
       }
 
-      // Combine all Float32Array chunks
-      let totalLength = 0;
-      for (const chunk of this.audioBuffer) {
-        totalLength += chunk.length;
-      }
-
-      const combinedFloat32 = new Float32Array(totalLength);
-      let offset = 0;
-      for (const chunk of this.audioBuffer) {
-        combinedFloat32.set(chunk, offset);
-        offset += chunk.length;
-      }
-
-      // Convert Float32Array to PCM16 ArrayBuffer (from OpenAI docs)
-      const pcm16Buffer = this.floatTo16BitPCM(combinedFloat32);
-      const base64Audio = this.base64EncodeAudio(pcm16Buffer);
-
-      console.log("[ATC-Chat] Sending PCM audio data:", {
-        samples: combinedFloat32.length,
-        duration: combinedFloat32.length / 24000,
-        pcm16_size: pcm16Buffer.byteLength,
-        base64_length: base64Audio.length,
-      });
-
-      // Send in OpenAI realtime API format
-      const message = {
-        type: "input_audio_buffer.append",
-        audio: base64Audio,
-      };
-
+      // Commit and create response
       if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
-        this.websocket.send(JSON.stringify(message));
-
         // Commit the audio buffer
         this.websocket.send(
           JSON.stringify({
@@ -776,29 +715,37 @@ class ATCChat {
           }),
         );
 
-        // Create a response (no instructions - use session-level instructions)
+        // Create a response
         this.websocket.send(
           JSON.stringify({
             type: "response.create",
             response: {
               modalities: ["text", "audio"],
-              // Removed instructions to allow session-level instructions to take effect
             },
           }),
         );
       }
-
-      // Clear the buffer
-      this.audioBuffer = [];
-    } catch (error) {
-      console.error("[ATC-Chat] Failed to convert and send PCM audio:", error);
     }
   }
 
-  playLastRecording() {
-    if (!this.lastAudioFloat32 || !this.audioContext) {
-      console.warn("No recording available or audio context not initialized");
+
+  async playLastRecording() {
+    if (!this.lastAudioFloat32) {
+      console.warn("[ATC-Chat] No recording available to play");
       return;
+    }
+
+    // Initialize audio context if needed
+    if (!this.audioContext) {
+      this.audioContext = new (
+        window.AudioContext || window.webkitAudioContext
+      )({
+        sampleRate: 24000,
+      });
+    }
+
+    if (this.audioContext.state === "suspended") {
+      await this.audioContext.resume();
     }
 
     try {
@@ -813,56 +760,13 @@ class ATCChat {
       source.buffer = buffer;
       source.connect(this.audioContext.destination);
       source.start();
-      console.log("Playing last recording...");
+      console.log("[ATC-Chat] Playing last recording via Web Audio API...");
     } catch (e) {
-      console.error("Failed to play recording:", e);
+      console.error("[ATC-Chat] Failed to play recording:", e);
     }
   }
 
-  // Simple linear interpolation resampler
-  resampleAudio(data, inputRate, outputRate) {
-    if (inputRate === outputRate) return data;
-    const ratio = inputRate / outputRate;
-    const newLength = Math.round(data.length / ratio);
-    const result = new Float32Array(newLength);
 
-    for (let i = 0; i < newLength; i++) {
-      const p = i * ratio;
-      const low = Math.floor(p);
-      const high = Math.ceil(p);
-      const w = p - low;
-
-      const v0 = data[Math.min(low, data.length - 1)];
-      const v1 = data[Math.min(high, data.length - 1)];
-
-      result[i] = v0 * (1 - w) + v1 * w;
-    }
-    return result;
-  }
-
-  // Converts Float32Array of audio data to PCM16 ArrayBuffer (from OpenAI docs)
-  floatTo16BitPCM(float32Array) {
-    const buffer = new ArrayBuffer(float32Array.length * 2);
-    const view = new DataView(buffer);
-    let offset = 0;
-    for (let i = 0; i < float32Array.length; i++, offset += 2) {
-      let s = Math.max(-1, Math.min(1, float32Array[i]));
-      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-    }
-    return buffer;
-  }
-
-  // Converts ArrayBuffer to base64-encoded string (from OpenAI docs)
-  base64EncodeAudio(arrayBuffer) {
-    let binary = "";
-    let bytes = new Uint8Array(arrayBuffer);
-    const chunkSize = 0x8000; // 32KB chunk size
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      let chunk = bytes.subarray(i, i + chunkSize);
-      binary += String.fromCharCode.apply(null, chunk);
-    }
-    return btoa(binary);
-  }
 
   queueAudioData(base64Audio) {
     // Queue base64 audio data for playback
