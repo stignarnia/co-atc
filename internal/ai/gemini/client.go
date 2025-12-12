@@ -74,6 +74,9 @@ type recvMsg struct {
 
 func (c *GeminiConnection) Send(data []byte) error {
 	// Parse OpenAI message.
+	if len(data) == 0 {
+		return nil
+	}
 	var oaMsg map[string]any
 	if err := json.Unmarshal(data, &oaMsg); err != nil {
 		c.logger.Error("Failed to parse OpenAI message", logger.Error(err))

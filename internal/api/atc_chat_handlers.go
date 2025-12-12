@@ -269,7 +269,10 @@ func (h *ATCChatHandlers) handleContextUpdates(ctx context.Context, providerConn
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case msg := <-updateChan:
+		case msg, ok := <-updateChan:
+			if !ok {
+				return nil
+			}
 			if err := providerConn.Send([]byte(msg)); err != nil {
 				return err
 			}
