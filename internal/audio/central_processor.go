@@ -369,6 +369,22 @@ func (p *CentralAudioProcessor) CreateReader(id string) (io.ReadCloser, error) {
 	return NewWAVReader(reader, p.sampleRate, p.channels), nil
 }
 
+// CreateRawReader creates a new reader for the raw audio stream (no WAV header)
+func (p *CentralAudioProcessor) CreateRawReader(id string) (io.ReadCloser, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if !p.isRunning {
+		if err := p.startFFmpeg(); err != nil {
+			return nil, fmt.Errorf("failed to start processor: %w", err)
+		}
+		p.isRunning = true
+	}
+
+	// Create a raw reader (PCM data directly from ffmpeg)
+	return p.multiReader.CreateReader(id), nil
+}
+
 // RemoveReader removes a reader
 func (p *CentralAudioProcessor) RemoveReader(id string) {
 	p.multiReader.RemoveReader(id)

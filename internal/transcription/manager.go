@@ -138,7 +138,7 @@ func (m *TranscriptionManager) StartTranscription(
 	}
 
 	// Create a reader from the audio processor
-	reader, err := audioProcessor.CreateReader(fmt.Sprintf("transcription-%s", frequencyID))
+	reader, err := audioProcessor.CreateRawReader(fmt.Sprintf("transcription-%s", frequencyID))
 	if err != nil {
 		audioProcessor.Stop()
 		return fmt.Errorf("failed to create audio reader: %w", err)
@@ -216,7 +216,7 @@ func (m *TranscriptionManager) StartTranscriptionWithExternalAudio(
 	}
 
 	// Create a reader from the central processor
-	reader, readerErr := ap.CreateReader(fmt.Sprintf("transcription-%s", frequencyID))
+	reader, readerErr := ap.CreateRawReader(fmt.Sprintf("transcription-%s", frequencyID))
 	if readerErr != nil {
 		return fmt.Errorf("failed to create reader from central processor: %w", readerErr)
 	}
