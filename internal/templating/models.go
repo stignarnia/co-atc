@@ -19,13 +19,14 @@ type TemplateContext struct {
 
 // TemplateData represents the formatted data for template rendering
 type TemplateData struct {
-	Aircraft             string    `json:"aircraft"`
-	Weather              string    `json:"weather"`
-	Runways              string    `json:"runways"`
-	TranscriptionHistory string    `json:"transcription_history"` // Only populated for ATC Chat
-	Airport              string    `json:"airport"`
-	Time                 string    `json:"time"`
-	Timestamp            time.Time `json:"timestamp"`
+	Aircraft             string      `json:"aircraft"`
+	Weather              string      `json:"weather"`
+	Runways              string      `json:"runways"`
+	TranscriptionHistory string      `json:"transcription_history"` // Only populated for ATC Chat
+	Airport              string      `json:"airport"`
+	AirportDetails       AirportInfo `json:"airport_details"`
+	Time                 string      `json:"time"`
+	Timestamp            time.Time   `json:"timestamp"`
 }
 
 // FormattingOptions controls what data is included and how it's formatted
@@ -86,6 +87,14 @@ func ATCChatFormattingOptions() FormattingOptions {
 func PostProcessorFormattingOptions() FormattingOptions {
 	opts := DefaultFormattingOptions()
 	opts.IncludeTranscriptionHistory = false // Post-processor gets transcripts in user input
+	opts.MaxAircraft = 100
+	return opts
+}
+
+// TranscriptionFormattingOptions returns formatting options optimized for Transcription prompt
+func TranscriptionFormattingOptions() FormattingOptions {
+	opts := DefaultFormattingOptions()
+	opts.IncludeTranscriptionHistory = false
 	opts.MaxAircraft = 100
 	return opts
 }

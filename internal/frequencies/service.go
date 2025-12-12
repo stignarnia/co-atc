@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -520,20 +519,6 @@ func NewService(
 		RetryMaxBackoffMs:     config.Transcription.RetryMaxBackoffMs,
 		PromptPath:            config.Transcription.PromptPath,
 		TimeoutSeconds:        config.Transcription.TimeoutSeconds,
-	}
-
-	// Load the prompt from file
-	promptBytes, err := os.ReadFile(config.Transcription.PromptPath)
-	if err != nil {
-		logger.Error("Failed to read transcription prompt file, using empty prompt",
-			Error(err),
-			String("path", config.Transcription.PromptPath))
-		transcriptionConfig.Prompt = ""
-	} else {
-		transcriptionConfig.Prompt = string(promptBytes)
-		logger.Info("Loaded transcription prompt from file",
-			String("path", config.Transcription.PromptPath),
-			Int("prompt_length", len(transcriptionConfig.Prompt)))
 	}
 
 	// Determine Post-Processing Provider

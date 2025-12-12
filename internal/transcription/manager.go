@@ -154,6 +154,7 @@ func (m *TranscriptionManager) StartTranscription(
 		m.transcriptionStorage,
 		m.logger,
 		m.transcriptionProvider,
+		m.templateRenderer,
 	)
 	if err != nil {
 		return err
@@ -231,6 +232,7 @@ func (m *TranscriptionManager) StartTranscriptionWithExternalAudio(
 		m.transcriptionStorage,
 		m.logger,
 		m.transcriptionProvider,
+		m.templateRenderer,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create external processor: %w", err)

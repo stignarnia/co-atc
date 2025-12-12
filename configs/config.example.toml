@@ -388,3 +388,8 @@ max_aircraft = 200
 [templating.post_processing]
 template_path = "prompts/post_processing_prompt.txt"
 context_transcriptions = 5
+
+# Transcription template settings
+[templating.transcription]
+template_path = "prompts/transcription_prompt.txt"
+max_aircraft = 200

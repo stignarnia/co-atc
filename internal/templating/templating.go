@@ -57,6 +57,12 @@ func (s *Service) RenderPostProcessorTemplate(templatePath string) (string, erro
 	return s.engine.RenderTemplate(templatePath, opts)
 }
 
+// RenderTranscriptionTemplate renders the transcription template
+func (s *Service) RenderTranscriptionTemplate(templatePath string) (string, error) {
+	opts := TranscriptionFormattingOptions()
+	return s.engine.RenderTemplate(templatePath, opts)
+}
+
 // RenderTemplate renders a template with custom formatting options
 func (s *Service) RenderTemplate(templatePath string, opts FormattingOptions) (string, error) {
 	return s.engine.RenderTemplate(templatePath, opts)

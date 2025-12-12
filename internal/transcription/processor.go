@@ -42,6 +42,7 @@ type Processor struct {
 	transcriptionConfig Config
 	sessionStartTime    time.Time
 	sessionRefreshMu    sync.Mutex
+	templateRenderer    TemplateRenderer
 }
 
 // NewProcessor creates a new transcription processor with a provided reader
@@ -54,6 +55,7 @@ func NewProcessor(
 	storage *sqlite.TranscriptionStorage,
 	logger *logger.Logger,
 	provider ai.TranscriptionProvider,
+	templateRenderer TemplateRenderer,
 ) (ProcessorInterface, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("transcription provider is required")
@@ -73,6 +75,7 @@ func NewProcessor(
 		logger:              logger.Named("custom-xscribe").With(String("frequency_id", frequencyID)),
 		audioChunker:        audio.NewAudioChunker(config.FFmpegSampleRate, config.FFmpegChannels, config.ChunkMs),
 		transcriptionConfig: config,
+		templateRenderer:    templateRenderer,
 	}
 
 	return processor, nil
@@ -83,17 +86,23 @@ func (p *Processor) Start() error {
 	p.logger.Info("Starting custom transcription processor",
 		String("frequency_id", p.frequencyID))
 
+	// Render prompt template
+	prompt, err := p.templateRenderer.RenderTranscriptionTemplate(p.transcriptionConfig.PromptPath)
+	if err != nil {
+		p.logger.Error("Failed to render transcription prompt template", Error(err))
+		prompt = p.transcriptionConfig.Prompt // Fallback to raw string if template fails (though it might be empty context)
+	}
+
 	// Map Config to ai.TranscriptionConfig
 	aiConfig := ai.TranscriptionConfig{
 		Language:       p.transcriptionConfig.Language,
-		Prompt:         p.transcriptionConfig.Prompt,
+		Prompt:         prompt,
 		Model:          p.transcriptionConfig.Model,
 		NoiseReduction: p.transcriptionConfig.NoiseReduction,
 		SampleRate:     p.transcriptionConfig.FFmpegSampleRate,
 	}
 
 	// Create transcription session
-	var err error
 	p.session, err = p.provider.CreateTranscriptionSession(p.ctx, aiConfig)
 	if err != nil {
 		p.audioReader.Close()
@@ -404,14 +413,20 @@ func (p *Processor) reconnect() error {
 		p.conn.Close()
 	}
 
+	// Render prompt template
+	prompt, err := p.templateRenderer.RenderTranscriptionTemplate(p.transcriptionConfig.PromptPath)
+	if err != nil {
+		p.logger.Error("Failed to render transcription prompt template on reconnect", Error(err))
+		prompt = p.transcriptionConfig.Prompt
+	}
+
 	aiConfig := ai.TranscriptionConfig{
 		Language:       p.transcriptionConfig.Language,
-		Prompt:         p.transcriptionConfig.Prompt,
+		Prompt:         prompt,
 		Model:          p.transcriptionConfig.Model,
 		NoiseReduction: p.transcriptionConfig.NoiseReduction,
 	}
 
-	var err error
 	p.session, err = p.provider.CreateTranscriptionSession(p.ctx, aiConfig)
 	if err != nil {
 		return err

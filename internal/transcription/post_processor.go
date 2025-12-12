@@ -37,6 +37,7 @@ type PostProcessingResult struct {
 // TemplateRenderer is an interface for rendering templates with airspace data
 type TemplateRenderer interface {
 	RenderPostProcessorTemplate(templatePath string) (string, error)
+	RenderTranscriptionTemplate(templatePath string) (string, error)
 }
 
 // PostProcessor manages the post-processing of transcriptions

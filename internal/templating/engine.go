@@ -126,6 +126,7 @@ func (e *Engine) prepareTemplateData(context *TemplateContext, opts FormattingOp
 
 	// Format airport data
 	data.Airport = FormatAirportData(context.Airport)
+	data.AirportDetails = context.Airport
 
 	return data
 }

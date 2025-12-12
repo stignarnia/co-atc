@@ -1041,6 +1041,9 @@ type TemplatingConfig struct {
 
 	// Post-processing template settings
 	PostProcessing TemplatingPostProcessingConfig `toml:"post_processing"`
+
+	// Transcription template settings
+	Transcription TemplatingTranscriptionConfig `toml:"transcription"`
 }
 
 // TemplatingATCChatConfig contains ATC chat specific templating settings
@@ -1053,4 +1056,10 @@ type TemplatingATCChatConfig struct {
 type TemplatingPostProcessingConfig struct {
 	TemplatePath          string `toml:"template_path"`          // Path to post-processing template file
 	ContextTranscriptions int    `toml:"context_transcriptions"` // Number of context transcriptions to include
+}
+
+// TemplatingTranscriptionConfig contains transcription specific templating settings
+type TemplatingTranscriptionConfig struct {
+	TemplatePath string `toml:"template_path"` // Path to transcription template file
+	MaxAircraft  int    `toml:"max_aircraft"`  // Maximum aircraft to include in template
 }
