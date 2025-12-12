@@ -7,15 +7,15 @@ import (
 
 // RealtimeSession represents an active realtime session
 type RealtimeSession struct {
-	ID           string
-	ProviderID   string
-	CreatedAt    time.Time
-	ExpiresAt    time.Time
-	Active       bool
-	LastActivity time.Time
-	ClientSecret string
-	SystemPrompt string
-	Config       RealtimeSessionConfig
+	ID           string                `json:"id"`
+	ProviderID   string                `json:"provider_id"`
+	CreatedAt    time.Time             `json:"created_at"`
+	ExpiresAt    time.Time             `json:"expires_at"`
+	Active       bool                  `json:"active"`
+	LastActivity time.Time             `json:"last_activity"`
+	ClientSecret string                `json:"client_secret"`
+	SystemPrompt string                `json:"system_prompt,omitempty"`
+	Config       RealtimeSessionConfig `json:"config"`
 }
 
 // RealtimeSessionConfig holds configuration for realtime sessions
