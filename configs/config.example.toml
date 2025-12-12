@@ -210,7 +210,7 @@ prompt_path = "prompts/transcription_prompt.txt"
 # Values: "openai", "gemini", true (openai), false
 enabled = "openai"
 # Model to use for post-processing
-model = "gpt-4o"
+model = "gpt-5.2"
 # How often to run the post-processing (in seconds)
 interval_seconds = 10
 # Maximum number of transcriptions to process in each batch
@@ -344,7 +344,7 @@ api_key = ""
 enabled = "openai"
 # OpenAI/Gemini API settings
 # Note: API keys are now centralized under [openai] and [gemini] sections
-realtime_model = "gpt-4o-realtime-preview-2025-06-03"
+realtime_model = "gpt-4o-realtime-preview-latest"
 voice = "ash"  # Voice options: 'alloy', 'ash',
 # Audio settings
 input_audio_format = "pcm16"

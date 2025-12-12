@@ -18,8 +18,8 @@ var (
 type TranscriptionRecord struct {
 	ID               int64     `json:"id"`
 	FrequencyID      string    `json:"frequency_id"`
-	CreatedAt        time.Time `json:"created_at"`
-	Content          string    `json:"content"`
+	CreatedAt        time.Time `json:"timestamp"`
+	Content          string    `json:"text"`
 	IsComplete       bool      `json:"is_complete"`
 	IsProcessed      bool      `json:"is_processed"`
 	ContentProcessed string    `json:"content_processed"`

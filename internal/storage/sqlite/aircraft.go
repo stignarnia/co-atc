@@ -1286,28 +1286,6 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-// formatNullableTime formats a nullable time.Time for SQL
-func formatNullableTime(t *time.Time) any {
-	if t == nil {
-		return nil
-	}
-	return t.Format(time.RFC3339)
-}
-
-// marshalStringArray converts a string array to a JSON string for storage
-func marshalStringArray(arr []string) string {
-	if arr == nil || len(arr) == 0 {
-		return ""
-	}
-
-	data, err := json.Marshal(arr)
-	if err != nil {
-		return ""
-	}
-
-	return string(data)
-}
-
 // GetActiveAircraft retrieves active aircraft data
 func (s *AircraftStorage) GetActiveAircraft() ([]*AircraftRecord, error) {
 

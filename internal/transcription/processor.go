@@ -374,6 +374,7 @@ func (p *Processor) processTranscriptionEvent(event *TranscriptionEvent) error {
 				"id":           id,
 				"frequency_id": p.frequencyID,
 
+				"timestamp":   event.Timestamp,
 				"text":        event.Text,
 				"is_complete": true,
 			},
@@ -386,8 +387,8 @@ func (p *Processor) processTranscriptionEvent(event *TranscriptionEvent) error {
 			Data: map[string]any{
 				"frequency_id": p.frequencyID,
 				"text":         event.Text, // delta text
-
-				"is_complete": false,
+				"timestamp":    event.Timestamp,
+				"is_complete":  false,
 			},
 		}
 		p.wsServer.Broadcast(msg)

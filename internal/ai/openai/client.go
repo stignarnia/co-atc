@@ -322,10 +322,10 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []ai.ChatMessage, 
 	}
 
 	type Request struct {
-		Model       string    `json:"model"`
-		Messages    []Message `json:"messages"`
-		MaxTokens   int       `json:"max_tokens,omitempty"`
-		Temperature float64   `json:"temperature"`
+		Model               string    `json:"model"`
+		Messages            []Message `json:"messages"`
+		MaxCompletionTokens int       `json:"max_completion_tokens,omitempty"`
+		Temperature         float64   `json:"temperature"`
 	}
 
 	reqMessages := make([]Message, len(messages))
@@ -337,10 +337,10 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []ai.ChatMessage, 
 	}
 
 	reqBody := Request{
-		Model:       config.Model,
-		Messages:    reqMessages,
-		MaxTokens:   config.MaxTokens,
-		Temperature: config.Temperature,
+		Model:               config.Model,
+		Messages:            reqMessages,
+		MaxCompletionTokens: config.MaxTokens,
+		Temperature:         config.Temperature,
 	}
 
 	jsonData, err := json.Marshal(reqBody)

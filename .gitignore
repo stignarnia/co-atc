@@ -37,7 +37,8 @@ Thumbs.db
 /data/
 
 /configs/config.toml
-config.toml
+/configs/config_openai.toml
+/configs/config_gemini.toml
 
 # Opensky API credentials
 /opensky
