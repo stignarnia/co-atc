@@ -93,6 +93,11 @@ func (c *Client) CreateRealtimeSession(ctx context.Context, config ai.RealtimeSe
 		"input_audio_format":  config.InputAudioFormat,
 		"output_audio_format": config.OutputAudioFormat,
 		"voice":               config.Voice,
+		"input_audio_transcription": map[string]any{
+			"model":    "whisper-1",
+			"language": "en",
+			"prompt":   "Aviation. ATC. Pilot. Air Traffic Control. Runway. Cleared for takeoff. Holding short. Winds. Altimeter.",
+		},
 	}
 
 	if config.Temperature != 0 {
@@ -103,7 +108,9 @@ func (c *Client) CreateRealtimeSession(ctx context.Context, config ai.RealtimeSe
 		reqBody["max_response_output_tokens"] = config.MaxResponseTokens
 	}
 
-	if config.TurnDetection != "" && config.TurnDetection != "none" {
+	if config.TurnDetection == "none" {
+		reqBody["turn_detection"] = nil
+	} else if config.TurnDetection != "" {
 		reqBody["turn_detection"] = map[string]string{"type": config.TurnDetection}
 	}
 

@@ -344,7 +344,7 @@ api_key = ""
 enabled = "openai"
 # OpenAI/Gemini API settings
 # Note: API keys are now centralized under [openai] and [gemini] sections
-realtime_model = "gpt-4o-realtime-preview-latest"
+realtime_model = "gpt-4o-realtime-preview"
 voice = "ash"  # Voice options: 'alloy', 'ash',
 # Audio settings
 input_audio_format = "pcm16"
