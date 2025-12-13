@@ -25,6 +25,11 @@ import (
 	"github.com/yegors/co-atc/pkg/logger"
 )
 
+var (
+	// Version is injected at build time
+	Version = "dev"
+)
+
 func main() {
 	// Parse command line flags
 	configPath := flag.String("config", "", "Path to configuration file (optional - will search in configs/ and root directory)")
@@ -55,7 +60,7 @@ func main() {
 	defer log.Sync()
 
 	log.Info("Starting Co-ATC server",
-		logger.String("version", "0.2.0"),
+		logger.String("version", Version),
 		logger.String("config_path", *configPath),
 	)
 

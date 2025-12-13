@@ -11,9 +11,12 @@ if (-not (Test-Path -Path "bin")) {
 $env:GOOS = "windows"
 $env:GOARCH = "amd64"
 
+# Read version from VERSION file
+$Version = Get-Content -Path "VERSION" -ErrorAction Stop
+
 # Build the server binary
-Write-Host "Building Co-ATC server for Windows AMD64... It's going to be a beautiful binary. Windows - where real business gets done!"
-go build -o bin/co-atc.exe ./cmd/server
+Write-Host "Building Co-ATC server for Windows AMD64 (Version: $Version)... It's going to be a beautiful binary. Windows - where real business gets done!"
+go build -ldflags "-X main.Version=$Version" -o bin/co-atc.exe ./cmd/server
 
 # Check if build was successful
 if ($LASTEXITCODE -eq 0) {
@@ -26,7 +29,8 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "Created: $($fileInfo.CreationTime)"
     
     Write-Host "`nTo run the server, use: .\bin\co-atc.exe"
-} else {
+}
+else {
     Write-Host "Build failed with exit code $LASTEXITCODE! It's a disaster. A total disaster. Sad!" -ForegroundColor Red
 }
 

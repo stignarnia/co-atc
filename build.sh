@@ -6,9 +6,12 @@
 echo "Creating bin directory, if it's not there. We build things, that's what we do."
 mkdir -p bin
 
+# Read version from VERSION file
+VERSION=$(cat VERSION)
+
 # Build the server binary for macOS arm64
-echo "Building Co-ATC server for macOS arm64... It's going to be a beautiful binary."
-GOOS=darwin GOARCH=arm64 go build -o bin/co-atc ./cmd/server
+echo "Building Co-ATC server for macOS arm64 (Version: $VERSION)... It's going to be a beautiful binary."
+GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.Version=$VERSION" -o bin/co-atc ./cmd/server
 
 # Check if build was successful
 if [ $? -eq 0 ]; then
