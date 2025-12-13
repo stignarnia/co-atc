@@ -324,8 +324,8 @@ func (p *Processor) processTranscriptions() {
 			// Process events (delta, completed, error)
 			eventType, _ := event["type"].(string)
 			switch eventType {
-			case "conversation.item.input_audio_transcription.delta", "response.audio_transcript.delta":
-				// Handle transcription deltas from provider
+			case "conversation.item.input_audio_transcription.delta":
+				// Handle transcription deltas from provider (radio transcription only)
 				deltaText, _ := event["delta"].(string)
 				if deltaText != "" {
 					p.logger.Debug("Received delta", String("text", deltaText))
@@ -343,16 +343,6 @@ func (p *Processor) processTranscriptions() {
 					Text:      transcript,
 					Timestamp: time.Now().UTC(),
 				})
-
-			case "response.text.done":
-				text, _ := event["text"].(string)
-				if text != "" {
-					p.processTranscriptionEvent(&TranscriptionEvent{
-						Type:      "completed",
-						Text:      text,
-						Timestamp: time.Now().UTC(),
-					})
-				}
 
 			case "error":
 				p.logger.Error("Received error event from provider", String("raw_event", string(message)))
