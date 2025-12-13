@@ -324,34 +324,33 @@ func (p *Processor) processTranscriptions() {
 			// Process events (delta, completed, error)
 			eventType, _ := event["type"].(string)
 			switch eventType {
-			case "conversation.item.input_audio_transcription.delta", "response.audio_transcript.delta":
-				// Handle transcription deltas from provider
+			case "conversation.item.input_audio_transcription.delta":
+				// Handle partial transcript - log but don't send to WebSocket clients
 				deltaText, _ := event["delta"].(string)
 				if deltaText != "" {
-					p.logger.Debug("Received delta", String("text", deltaText))
-					p.processTranscriptionEvent(&TranscriptionEvent{
-						Type:      "delta",
-						Text:      deltaText,
-						Timestamp: time.Now().UTC(),
-					})
+					p.logger.Debug("Received delta transcription",
+						String("frequency_id", p.frequencyID),
+						String("text", deltaText))
 				}
 
 			case "conversation.item.input_audio_transcription.completed":
+				// Handle completed transcript
 				transcript, _ := event["transcript"].(string)
-				p.processTranscriptionEvent(&TranscriptionEvent{
+				if transcript == "" {
+					p.logger.Error("Completed event missing transcript")
+					continue
+				}
+
+				// Create transcription event
+				transcriptionEvent := &TranscriptionEvent{
 					Type:      "completed",
 					Text:      transcript,
 					Timestamp: time.Now().UTC(),
-				})
+				}
 
-			case "response.text.done":
-				text, _ := event["text"].(string)
-				if text != "" {
-					p.processTranscriptionEvent(&TranscriptionEvent{
-						Type:      "completed",
-						Text:      text,
-						Timestamp: time.Now().UTC(),
-					})
+				// Process the event
+				if err := p.processTranscriptionEvent(transcriptionEvent); err != nil {
+					p.logger.Error("Error processing completed transcription", Error(err))
 				}
 
 			case "error":
@@ -361,47 +360,55 @@ func (p *Processor) processTranscriptions() {
 	}
 }
 
-// processTranscriptionEvent handles incoming transcription events, storing completed ones
-// and broadcasting updates to WebSocket clients.
+// processTranscriptionEvent processes a transcription event
 func (p *Processor) processTranscriptionEvent(event *TranscriptionEvent) error {
+	// Log the event
+	p.logger.Debug("Received completed transcription", String("text", event.Text))
 
+	// Store completed transcriptions in the database
 	if event.Type == "completed" {
+		// Create record
 		record := &sqlite.TranscriptionRecord{
-			FrequencyID: p.frequencyID,
-			CreatedAt:   event.Timestamp,
-			Content:     event.Text,
-			IsComplete:  true,
+			FrequencyID:      p.frequencyID,
+			CreatedAt:        event.Timestamp,
+			Content:          event.Text,
+			IsComplete:       true,
+			IsProcessed:      false,
+			ContentProcessed: "",
 		}
+
+		// Store in database
 		id, err := p.storage.StoreTranscription(record)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to store transcription: %w", err)
 		}
 
+		p.logger.Debug("Stored transcription in database", Int64("id", id))
+
+		// Send to WebSocket clients
 		msg := &websocket.Message{
 			Type: "transcription",
 			Data: map[string]any{
-				"id":           id,
-				"frequency_id": p.frequencyID,
+				"id":                id,
+				"frequency_id":      p.frequencyID,
+				"text":              event.Text,
+				"timestamp":         event.Timestamp,
+				"is_complete":       true,
+				"is_processed":      false,
+				"content_processed": "",
+			},
+		}
 
-				"timestamp":   event.Timestamp,
-				"text":        event.Text,
-				"is_complete": true,
-			},
-		}
+		p.logger.Debug("Broadcasting transcription to WebSocket clients",
+			String("frequency_id", p.frequencyID),
+			String("text", event.Text),
+			Int64("id", id))
+
 		p.wsServer.Broadcast(msg)
-	} else {
-		// Delta
-		msg := &websocket.Message{
-			Type: "transcription",
-			Data: map[string]any{
-				"frequency_id": p.frequencyID,
-				"text":         event.Text, // delta text
-				"timestamp":    event.Timestamp,
-				"is_complete":  false,
-			},
-		}
-		p.wsServer.Broadcast(msg)
+
+		return nil
 	}
+
 	return nil
 }
 
