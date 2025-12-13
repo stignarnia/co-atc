@@ -567,6 +567,9 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []ai.ChatMessage, 
 	if systemInstruction != nil {
 		genConfig.SystemInstruction = systemInstruction
 	}
+	if config.ResponseFormat == "json_object" {
+		genConfig.ResponseMIMEType = "application/json"
+	}
 
 	resp, err := client.Models.GenerateContent(ctx, model, finalContents, genConfig)
 	if err != nil {

@@ -55,7 +55,7 @@ func main() {
 	defer log.Sync()
 
 	log.Info("Starting Co-ATC server",
-		logger.String("version", "0.1.0"),
+		logger.String("version", "0.2.0"),
 		logger.String("config_path", *configPath),
 	)
 

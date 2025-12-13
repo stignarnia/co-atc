@@ -83,9 +83,10 @@ type ChatMessage struct {
 
 // ChatConfig holds configuration for chat completions
 type ChatConfig struct {
-	Model       string
-	Temperature float64
-	MaxTokens   int
+	Model          string
+	Temperature    float64
+	MaxTokens      int
+	ResponseFormat string // "text" or "json_object"
 }
 
 // ChatProvider defines the interface for text-to-text chat completions (used for post-processing)

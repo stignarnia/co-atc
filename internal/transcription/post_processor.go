@@ -24,6 +24,7 @@ type PostProcessingConfig struct {
 	ContextTranscriptions int
 	SystemPromptPath      string
 	TimeoutSeconds        int
+	MaxResponseTokens     int
 }
 
 // PostProcessingResult represents the structured result from the LLM
@@ -319,10 +320,16 @@ func (p *PostProcessor) processBatch(systemPrompt string, userInput string) ([]T
 		{Role: "user", Content: userInput},
 	}
 
+	maxTokens := p.config.MaxResponseTokens
+	if maxTokens <= 0 {
+		maxTokens = 8192 // Default to higher limit for JSON mode
+	}
+
 	options := ai.ChatConfig{
-		Model:       p.config.Model,
-		Temperature: 0.0,
-		MaxTokens:   4096,
+		Model:          p.config.Model,
+		Temperature:    0.0,
+		MaxTokens:      maxTokens,
+		ResponseFormat: "json_object",
 	}
 
 	content, err := p.chatProvider.ChatCompletion(p.ctx, messages, options)

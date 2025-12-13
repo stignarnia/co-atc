@@ -215,6 +215,8 @@ model = "gpt-5.2"
 interval_seconds = 10
 # Maximum number of transcriptions to process in each batch
 batch_size = 20
+# Maximum response tokens for the LLM (useful for large batches or verbose models)
+max_response_tokens = 8192
 # Number of previous processed transcriptions to include for context
 context_transcriptions = 3
 # HTTP timeout for OpenAI API requests in seconds
