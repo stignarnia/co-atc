@@ -72,14 +72,17 @@ Configure your aircraft data source:
 
 ```toml
 [adsb]
-# For local tar1090 server (recommended)
+# Data source type: "local", "external-adsbexchangelike", or "external-opensky"
 source_type = "local"
+
+# For local tar1090 server (recommended)
 local_source_url = "http://your-tar1090-server:8080/tar1090/data/aircraft.json"
 
-# OR for external API (requires API key)
-# source_type = "external"
-# external_source_url = "https://adsbexchange-com1.p.rapidapi.com/v2/lat/%f/lon/%f/dist/%.0f/"
-# api_key = "your-api-key-here"
+# OR for external API (e.g. ADSB.lol or RapidAPI)
+# source_type = "external-adsbexchangelike"
+# external_source_url = "https://api.adsb.lol/v2/lat/%f/lon/%f/dist/%.0f/"
+# api_host = "adsbexchange-com1.p.rapidapi.com" # Optional, for QuickAPI
+# api_key = "your-api-key-here" # Optional
 ```
 
 #### 2. Station Location
@@ -109,15 +112,21 @@ transcribe_audio = true
 
 ### Optional Settings
 
-#### 4. OpenAI API Integration
-Enable AI features with your OpenAI API key:
+#### 4. AI Integration (OpenAI / Gemini)
+Enable AI features by configuring your API keys in the dedicated sections:
 
 ```toml
+[openai]
+api_key = "sk-your-openai-key"
+
+[gemini]
+api_key = "your-gemini-key"
+
 [transcription]
-openai_api_key = "sk-your-key-here"
+# source = "openai" # or "gemini"
 
 [atc_chat]
-openai_api_key = "sk-your-key-here"
+# source = "openai" # or "gemini"
 ```
 
 #### 5. Server Configuration
@@ -428,9 +437,3 @@ This is a development/hobby project. For issues:
 3. Review this README
 4. Check the main project documentation
 
-## Additional Resources
-
-- [Main Project README](../README.md)
-- [API Documentation](../docs/api_spec.md)
-- [Technical Documentation](../docs/technical_docs.md)
-- [Project Progress](../docs/project_progress.md) 

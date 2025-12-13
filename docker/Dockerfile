@@ -1,5 +1,5 @@
 # Multi-stage build for Co-ATC
-FROM golang:1.23.2-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git
@@ -17,7 +17,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o co-atc cmd/server/main.go
+RUN VERSION=$(cat VERSION) && CGO_ENABLED=0 GOOS=linux go build -ldflags "-X main.Version=$VERSION" -a -installsuffix cgo -o co-atc cmd/server/main.go
 
 # Runtime stage
 FROM alpine:latest

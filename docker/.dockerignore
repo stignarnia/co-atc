@@ -1,64 +1,66 @@
-# Git files
+# Git
 .git
 .gitignore
 .gitattributes
 
-# Docker files
+# Docker
 docker/
 Dockerfile
 docker-compose.yml
 .dockerignore
 
-# Documentation
+# Documentation & Non-Code
 README.md
 docs/
 *.md
+LICENSE
 
-# IDE files
-.vscode/
+# IDE & Editor
 .idea/
+.vscode/
 *.swp
 *.swo
 *~
 
-# OS files
+# OS
 .DS_Store
 Thumbs.db
-*.tmp
-*.log
 
-# Build artifacts
-bin/
-build/
-dist/
+# Binaries & Build Artifacts (from .gitignore)
 *.exe
+*.exe~
 *.dll
 *.so
 *.dylib
-
-# Development files
 *.test
-*.prof
 *.out
-coverage.txt
-coverage.html
+go.work
+/bin/
+/dist/
+build/
 
-# Data files (these should be mounted as volumes)
-data/
+# Logs & Data (from .gitignore)
+*.log
+/data/
 logs/
 *.db
 *.sqlite
 *.sqlite3
+*.tmp
 
-# Configuration files (mounted as volumes)
-config.toml
+# Configuration (from .gitignore)
+/configs/config.toml
+/configs/config_openai.toml
+/configs/config_gemini.toml
+/opensky
 
-# Dependency files (will be handled by Go modules)
-vendor/
-
-# Test files
+# Development & Testing
+*.prof
+coverage.txt
+coverage.html
 *_test.go
 testdata/
 
-# License
-LICENSE 
+# Dependencies
+# vendor/
+ 

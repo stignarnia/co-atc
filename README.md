@@ -44,7 +44,7 @@ This application is designed for local use only and should never be made accessi
 
 ## Requirements
 
-- **Go 1.21 or higher** - To build the project
+- **Go 1.24 or higher** - To build the project
 - **ADS-B Data Source** - Access to ADS-B data (e.g., local `tar1090` server or external API)
 - **FFmpeg** - Audio processing for radio frequency streams (see installation instructions below)
 - **Modern Web Browser** - Chrome, Firefox, Safari, or Edge for the web interface
@@ -118,7 +118,7 @@ cd co-atc
 go mod download
 
 # Build the application using the build script
-.\build.ps1
+.\build_windows.ps1
 ```
 
 #### Mac
@@ -131,7 +131,7 @@ cd co-atc
 go mod download
 
 # Build the application using the build script (for macOS ARM64)
-./build.sh
+./build_macos.sh
 ```
 
 #### Linux
@@ -173,15 +173,15 @@ nano configs/config.toml
 #### Essential Configuration Settings
 
 **Mandatory:**
-- `local_source_url` - Set your local tar1090 server URL (e.g., `"http://localhost:8080/data/aircraft.json"`) or configure remote API in `[adsb.external_api]` section if using external ADS-B data
+- `source_type` - Set to `local`, `external-adsbexchangelike`, or `external-opensky`
+- `local_source_url` - Set your local tar1090 server URL (e.g., `"http://localhost:8080/data/aircraft.json"`) or configure remote API if using external ADS-B data
 
 ![Co-ATC Main Interface vs Tar1090](docs/split_tar1090.png)
 
 **Optional but Recommended:**
 - `[station]` - Configure your airport/station location (Toronto CYYZ example provided)
 - `[[frequencies.sources]]` - Add your local radio frequencies for transcription (Toronto examples provided)
-- `transcription.openai_api_key` or `transcription.gemini_api_key` - Enable AI transcription features (features disabled if not provided)
-- `atc_chat.openai_api_key` or `atc_chat.gemini_api_key` - Enable AI voice assistant (features disabled if not provided)
+- `openai.api_key` or `gemini.api_key` - Enable AI transcription and advisory features (refer to config file for placement)
 
 The configuration file contains comprehensive documentation for all settings with examples for Toronto Pearson (CYYZ). You can use these as templates for your own location and frequencies.
 
