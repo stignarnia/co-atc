@@ -16,19 +16,19 @@ $Version = Get-Content -Path "VERSION" -ErrorAction Stop
 
 # Build the server binary
 Write-Host "Building Co-ATC server for Windows AMD64 (Version: $Version)... It's going to be a beautiful binary. Windows - where real business gets done!"
-go build -ldflags "-X main.Version=$Version" -o bin/co-atc.exe ./cmd/server
+go build -ldflags "-X main.Version=$Version" -o bin/co-atc-windows.exe ./cmd/server
 
 # Check if build was successful
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Build successful! A tremendous success. The best Windows build, everyone agrees."
     
     # Get file info. Bigly info.
-    $fileInfo = Get-Item -Path "bin/co-atc.exe"
-    Write-Host "Binary created at bin/co-atc.exe"
+    $fileInfo = Get-Item -Path "bin/co-atc-windows.exe"
+    Write-Host "Binary created at bin/co-atc-windows.exe"
     Write-Host "File size: $([Math]::Round($fileInfo.Length / 1MB, 2)) MB. It's a yuge file."
     Write-Host "Created: $($fileInfo.CreationTime)"
     
-    Write-Host "`nTo run the server, use: .\bin\co-atc.exe"
+    Write-Host "`nTo run the server, use: .\bin\co-atc-windows.exe"
 }
 else {
     Write-Host "Build failed with exit code $LASTEXITCODE! It's a disaster. A total disaster. Sad!" -ForegroundColor Red

@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'VERSION'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@main
+      
+      - name: Set up Go
+        uses: actions/setup-go@main
+        with:
+          go-version: 'stable'
+          
+      - name: Build Linux Binary
+        run: ./build_linux.sh
+        
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: co-atc-linux
+          path: bin/co-atc-linux
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@main
+      
+      - name: Set up Go
+        uses: actions/setup-go@main
+        with:
+          go-version: 'stable'
+          
+      - name: Build macOS Binary
+        run: ./build_macos.sh
+        
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: co-atc-macos
+          path: bin/co-atc-macos
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@main
+      
+      - name: Set up Go
+        uses: actions/setup-go@main
+        with:
+          go-version: 'stable'
+          
+      - name: Build Windows Binary
+        run: ./build_windows.ps1
+        
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: co-atc-windows
+          path: bin/co-atc-windows.exe
+
+  release:
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@main
+      
+      - name: Read Version
+        id: get_version
+        run: echo "VERSION=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+        
+      - name: Download all artifacts
+        uses: actions/download-artifact@main
+        with:
+          path: dist
+          merge-multiple: true
+          
+      - name: Create Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.get_version.outputs.VERSION }}" \
+            dist/* \
+            --title "Release v${{ steps.get_version.outputs.VERSION }}" \
+            --generate-notes

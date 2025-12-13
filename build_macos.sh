@@ -11,21 +11,21 @@ VERSION=$(cat VERSION)
 
 # Build the server binary for macOS arm64
 echo "Building Co-ATC server for macOS arm64 (Version: $VERSION)... It's going to be a beautiful binary."
-GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.Version=$VERSION" -o bin/co-atc ./cmd/server
+GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.Version=$VERSION" -o bin/co-atc-macos ./cmd/server
 
 # Check if build was successful
 if [ $? -eq 0 ]; then
     echo "Build successful! A tremendous success. The best build, everyone agrees."
     
     # Get file info. Bigly info.
-    file_info=$(ls -lh bin/co-atc)
+    file_info=$(ls -lh bin/co-atc-macos)
     file_size=$(echo "$file_info" | awk '{print $5}')
     
-    echo "Binary created at bin/co-atc"
+    echo "Binary created at bin/co-atc-macos"
     echo "File size: $file_size. It's a yuge file."
     
-    echo -e "\nTo run the server, use: ./bin/co-atc"
+    echo -e "\nTo run the server, use: ./bin/co-atc-macos"
 else
     echo "Build failed! It's a disaster. A total disaster. Sad!"
     exit 1
-fi 
+fi
