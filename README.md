@@ -95,10 +95,10 @@ ffmpeg -version
 
 The quickest way to get Co-ATC running is to download pre-compiled binaries from the releases page.
 
-1. **Download the latest release** from [GitHub Releases](https://github.com/yegors/co-atc/releases)
+1. **Download the latest release** from [GitHub Releases](https://github.com/stignarnia/co-atc/releases)
 2. **Clone the repository** (required for assets and www folders):
    ```bash
-   git clone https://github.com/yegors/co-atc.git
+   git clone https://github.com/stignarnia/co-atc.git
    cd co-atc
    ```
 3. **Extract the binary** to the project root directory
@@ -111,7 +111,7 @@ If you prefer to build from source or need to modify the code:
 #### Windows
 ```powershell
 # Clone the repository
-git clone https://github.com/yegors/co-atc.git
+git clone https://github.com/stignarnia/co-atc.git
 cd co-atc
 
 # Install dependencies
@@ -124,7 +124,7 @@ go mod download
 #### Mac
 ```bash
 # Clone the repository
-git clone https://github.com/yegors/co-atc.git
+git clone https://github.com/stignarnia/co-atc.git
 cd co-atc
 
 # Install dependencies
@@ -137,7 +137,7 @@ go mod download
 #### Linux
 ```bash
 # Clone the repository
-git clone https://github.com/yegors/co-atc.git
+git clone https://github.com/stignarnia/co-atc.git
 cd co-atc
 
 # Install dependencies
